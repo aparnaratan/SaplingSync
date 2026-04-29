@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#2d7a3a">
+<title>SaplingSync</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Noto+Sans+Tamil:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Noto Sans','Noto Sans Tamil',system-ui,sans-serif;background:#f7f5f0;overflow-x:hidden}
+#root{min-height:100vh}input,textarea,button,select{font-family:inherit}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.leaflet-container{border-radius:12px;z-index:1}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useRef,useCallback,useEffect}=React;
+const sb=supabase.createClient('https://xrxkxxucpgacuphyujtx.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhyeGt4eHVjcGdhY3VwaHl1anR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MDM3ODEsImV4cCI6MjA5Mjk3OTc4MX0.VBSMJAqVPxcLVcUx1CJXcW2iJfN0LqUkZ3mbEHT6TdE');
+
+const C={bg:"#f7f5f0",sf:"#fff",alt:"#f0ede5",bdr:"#e2ddd3",tx:"#1a1a18",mu:"#6b6560",dm:"#9a9590",ac:"#2d7a3a",aL:"#e8f5e9",aD:"#1b5e26",wr:"#c27a1a",wL:"#fff3e0",dg:"#c0392b",dL:"#fdecea",bl:"#1565c0",bL:"#e3f2fd",gd:"#f9a825",sh:"0 1px 3px rgba(0,0,0,.06)"};
+
+// Only 5 plant types for requests
+const PLANTS5=[{id:"coconut",en:"Coconut",ta:"தேங்காய்",icon:"🥥"},{id:"mango",en:"Mango",ta:"மாம்பழம்",icon:"🥭"},{id:"guava",en:"Guava",ta:"கொய்யா",icon:"🍈"},{id:"lemon",en:"Lemon",ta:"எலுமிச்சை",icon:"🍋"},{id:"teak",en:"Teak",ta:"தேக்கு",icon:"🪵"}];
+// Full crop list for existing crops
+const ALLCROPS=[...PLANTS5,{id:"paddy",en:"Paddy",ta:"நெல்",icon:"🌾"},{id:"banana",en:"Banana",ta:"வாழை",icon:"🍌"},{id:"sugarcane",en:"Sugarcane",ta:"கரும்பு",icon:"🎋"},{id:"groundnut",en:"Groundnut",ta:"நிலக்கடலை",icon:"🥜"},{id:"moringa",en:"Moringa",ta:"முருங்கை",icon:"🍃"},{id:"neem",en:"Neem",ta:"வேம்பு",icon:"🌿"},{id:"cotton",en:"Cotton",ta:"பருத்தி",icon:"☁️"},{id:"other",en:"Other",ta:"பிற",icon:"🌱"}];
+// Water sources including well (#1)
+const WATERS_EN=["Borewell","Well","Canal","Rainfed","River","Pond/Tank"];
+const WATERS_TA=["ஆழ்குழாய்","கிணறு","கால்வாய்","மழை","ஆறு","குளம்"];
+const WATER_KEYS=["borewell","well","canal","rainfed","river","pond"];
+const SOILS_EN=["Alluvial","Black Cotton","Red","Laterite","Sandy","Clay"];
+const SOILS_TA=["வண்டல்","கரிசல்","செம்மண்","லேட்டரைட்","மணல்","களிமண்"];
+const SOIL_KEYS=["alluvial","black","red","laterite","sandy","clay"];
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHARED UI
+// ═══════════════════════════════════════════════════════════════════════════
+const hasSR=!!(window.SpeechRecognition||window.webkitSpeechRecognition);
+const useVoice=(lang,onR)=>{const[on,setOn]=useState(false);const r=useRef();const start=useCallback(()=>{const S=window.SpeechRecognition||window.webkitSpeechRecognition;if(!S)return;try{const x=new S();x.lang=lang==="ta"?"ta-IN":"en-IN";x.interimResults=false;x.onresult=e=>{try{onR(e.results[0][0].transcript)}catch(x){}setOn(false)};x.onerror=()=>setOn(false);x.onend=()=>setOn(false);r.current=x;x.start();setOn(true)}catch(e){setOn(false)}},[lang,onR]);const stop=useCallback(()=>{try{r.current?.stop()}catch(e){}setOn(false)},[]);return{on,start,stop}};
+const Card=({children,style={},...p})=><div style={{background:C.sf,border:`1px solid ${C.bdr}`,borderRadius:14,padding:16,marginBottom:12,boxShadow:C.sh,...style}} {...p}>{children}</div>;
+const Pill=({label,color,bg})=><span style={{display:"inline-flex",padding:"3px 9px",borderRadius:20,fontSize:11,fontWeight:600,color,background:bg}}>{label}</span>;
+const Chip=({label,active,onClick})=><button onClick={onClick} style={{padding:"7px 13px",borderRadius:20,border:`1.5px solid ${active?C.ac:C.bdr}`,background:active?C.aL:C.sf,color:active?C.aD:C.mu,fontSize:13,fontWeight:600,cursor:"pointer"}}>{label}</button>;
+const Btn=({children,onClick,primary=true,disabled=false,style={}})=><button onClick={onClick} disabled={disabled} style={{width:"100%",padding:"13px",background:disabled?"#ccc":primary?C.ac:C.sf,border:primary?"none":`1.5px solid ${C.bdr}`,borderRadius:10,color:primary?"#fff":C.tx,fontSize:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",opacity:disabled?.6:1,...style}}>{children}</button>;
+const Steps=({steps,cur})=><div style={{display:"flex",gap:3,marginBottom:20}}>{steps.map((s,i)=><div key={i} style={{flex:1,textAlign:"center"}}><div style={{height:4,borderRadius:2,marginBottom:5,background:i<=cur?C.ac:C.bdr}}/><span style={{fontSize:9,fontWeight:600,color:i<=cur?C.ac:C.dm}}>{s}</span></div>)}</div>;
+const Back=({onClick,lang})=><button onClick={onClick} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,padding:0,fontFamily:"inherit",marginBottom:14}}>← {lang==="ta"?"பின்":"Back"}</button>;
+const VInput=({label,value,onChange,placeholder,lang,type="text",multi=false})=>{const{on,start,stop}=useVoice(lang,t=>onChange(value?value+" "+t:t));const st={width:"100%",padding:"11px 13px",paddingRight:hasSR?44:13,background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:10,color:C.tx,fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"inherit"};return<div style={{marginBottom:14}}>{label&&<label style={{display:"block",fontSize:12,fontWeight:600,color:C.mu,marginBottom:5}}>{label}</label>}<div style={{position:"relative"}}>{multi?<textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} rows={3} style={{...st,resize:"vertical"}}/>:<input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={st}/>}{hasSR&&<button onClick={on?stop:start} style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",width:36,height:36,borderRadius:"50%",border:"none",cursor:"pointer",background:on?C.dg:C.aL,color:on?"#fff":C.ac,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",animation:on?"pulse 1.2s infinite":"none"}}>{on?"⏹":"🎤"}</button>}</div>{on&&<div style={{fontSize:11,color:C.dg,marginTop:3,fontWeight:600}}>{lang==="ta"?"கேட்கிறது...":"Listening..."}</div>}</div>};
+const Input=({label,value,onChange,placeholder,type="text"})=><div style={{marginBottom:14}}>{label&&<label style={{display:"block",fontSize:12,fontWeight:600,color:C.mu,marginBottom:5}}>{label}</label>}<input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 13px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:10,color:C.tx,fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/></div>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTERACTIVE LEAFLET MAP (#6)
+// ═══════════════════════════════════════════════════════════════════════════
+const LiveMap=({lat,lng,lang})=>{const ref=useRef();const mapRef=useRef();
+useEffect(()=>{if(!ref.current||!lat||!lng)return;const la=parseFloat(lat),lo=parseFloat(lng);if(isNaN(la)||isNaN(lo))return;
+if(mapRef.current){mapRef.current.setView([la,lo],16);return}
+const map=window.L.map(ref.current,{zoomControl:true,attributionControl:false}).setView([la,lo],16);
+// Use Google satellite tiles — much more reliable on Indian mobile networks
+window.L.tileLayer('https://mt1.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}',{maxZoom:20}).addTo(map);
+window.L.marker([la,lo]).addTo(map).bindPopup(lang==="ta"?"📍 என் நிலம்":"📍 My Farm").openPopup();
+mapRef.current=map;setTimeout(()=>map.invalidateSize(),300);
+return()=>{if(mapRef.current){mapRef.current.remove();mapRef.current=null}}},[lat,lng]);
+if(!lat||!lng)return null;
+return<Card><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:13,fontWeight:700}}>🛰️ {lang==="ta"?"செயற்கைக்கோள்":"Satellite View"}</span><span style={{fontSize:11,color:C.dm}}>{parseFloat(lat).toFixed(4)}°N</span></div><div ref={ref} style={{width:"100%",height:220,borderRadius:12,background:"#1a2e1a"}}/></Card>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WEATHER
+// ═══════════════════════════════════════════════════════════════════════════
+const WX={0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",51:"🌦️",61:"🌧️",80:"🌦️",82:"⛈️",95:"⛈️"};const wxI=c=>WX[c]||WX[Math.floor(c/10)*10]||"🌤️";
+const WeatherCard=({lang,lat,lng})=>{const[d,setD]=useState(null);useEffect(()=>{if(!lat||!lng)return;fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia/Kolkata&forecast_days=7`).then(r=>r.json()).then(setD).catch(()=>{})},[lat,lng]);if(!d?.current)return null;const days=lang==="ta"?["ஞா","தி","செ","புத","வி","வெ","ச"]:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];return<Card style={{background:"linear-gradient(135deg,#1565c0,#0d47a1)",border:"none",color:"#fff"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:32,fontWeight:800}}>{Math.round(d.current.temperature_2m)}°C</div><div style={{fontSize:12,opacity:.8}}>💧{d.current.relative_humidity_2m}% 💨{Math.round(d.current.wind_speed_10m)}km/h</div></div><div style={{fontSize:36}}>{wxI(d.current.weather_code)}</div></div>{d.daily&&<div style={{display:"flex",gap:3}}>{d.daily.time.map((dt,i)=><div key={i} style={{flex:1,textAlign:"center",background:"rgba(255,255,255,.12)",borderRadius:8,padding:"4px 2px"}}><div style={{fontSize:9,opacity:.7}}>{days[new Date(dt).getDay()]}</div><div style={{fontSize:14,margin:"2px 0"}}>{wxI(d.daily.weather_code[i])}</div><div style={{fontSize:9,fontWeight:700}}>{Math.round(d.daily.temperature_2m_max[i])}°/{Math.round(d.daily.temperature_2m_min[i])}°</div></div>)}</div>}</Card>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════════════════════════════════
+const Auth=({lang,onAuth})=>{const[authType,setAuthType]=useState("email"); // "email" | "phone"
+const[mode,setMode]=useState("login");const[em,setEm]=useState("");const[pw,setPw]=useState("");
+const[phone,setPhone]=useState("");const[otp,setOtp]=useState("");const[otpSent,setOtpSent]=useState(false);
+const[busy,setBusy]=useState(false);const[err,setErr]=useState("");const[ok,setOk]=useState("");
+
+// Email login/signup
+const goEmail=async()=>{setBusy(true);setErr("");if(mode==="login"){const{data,error}=await sb.auth.signInWithPassword({email:em,password:pw});if(error){setErr(error.message);setBusy(false);return}onAuth(data.user)}else{const{error}=await sb.auth.signUp({email:em,password:pw});if(error){setErr(error.message);setBusy(false);return}setOk(lang==="ta"?"கணக்கு உருவாக்கப்பட்டது!":"Account created! Log in now.");setMode("login");setBusy(false)}};
+
+// Phone OTP - send
+const sendOtp=async()=>{setBusy(true);setErr("");
+const cleanPhone=phone.startsWith("+") ? phone : "+91"+phone.replace(/\D/g,"");
+const{error}=await sb.auth.signInWithOtp({phone:cleanPhone});
+if(error){setErr(error.message);setBusy(false);return}
+setOtpSent(true);setOk(lang==="ta"?"OTP அனுப்பப்பட்டது!":"OTP sent!");setBusy(false)};
+
+// Phone OTP - verify
+const verifyOtp=async()=>{setBusy(true);setErr("");
+const cleanPhone=phone.startsWith("+") ? phone : "+91"+phone.replace(/\D/g,"");
+const{data,error}=await sb.auth.verifyOtp({phone:cleanPhone,token:otp,type:"sms"});
+if(error){setErr(error.message);setBusy(false);return}
+onAuth(data.user)};
+
+const tabStyle=(active)=>({flex:1,padding:"10px",border:"none",borderBottom:`2px solid ${active?C.ac:"transparent"}`,background:"transparent",color:active?C.ac:C.mu,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"});
+
+return<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{maxWidth:400,width:"100%"}}><div style={{textAlign:"center",marginBottom:32}}><div style={{fontSize:48,marginBottom:8}}>🌱</div><h1 style={{fontSize:24,fontWeight:800,color:C.ac}}>SaplingSync</h1><p style={{fontSize:13,color:C.mu,marginTop:4}}>{lang==="ta"?"100 நாற்றுகள். ஒரு இலக்கு.":"100 Saplings. One Mission."}</p></div>
+<Card style={{padding:24}}>
+{/* Auth type tabs */}
+<div style={{display:"flex",borderBottom:`1px solid ${C.bdr}`,marginBottom:16}}>
+<button onClick={()=>{setAuthType("email");setErr("");setOk("")}} style={tabStyle(authType==="email")}>📧 {lang==="ta"?"மின்னஞ்சல்":"Email"}</button>
+<button onClick={()=>{setAuthType("phone");setErr("");setOk("")}} style={tabStyle(authType==="phone")}>📱 {lang==="ta"?"கைபேசி":"Phone"}</button>
+</div>
+
+{err&&<div style={{padding:10,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,marginBottom:12}}>{err}</div>}
+{ok&&<div style={{padding:10,background:C.aL,borderRadius:8,color:C.ac,fontSize:12,fontWeight:600,marginBottom:12}}>{ok}</div>}
+
+{/* EMAIL AUTH */}
+{authType==="email"&&<div>
+<h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up")}</h3>
+<Input label={lang==="ta"?"மின்னஞ்சல்":"Email"} value={em} onChange={setEm} placeholder="you@email.com" type="email"/>
+<Input label={lang==="ta"?"கடவுச்சொல்":"Password"} value={pw} onChange={setPw} placeholder="••••••" type="password"/>
+<Btn onClick={goEmail} disabled={busy||!em||!pw}>{busy?(lang==="ta"?"ஏற்றுகிறது...":"Loading..."):(mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up"))}</Btn>
+<div style={{textAlign:"center",marginTop:12}}><button onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer"}}>{mode==="login"?(lang==="ta"?"கணக்கு இல்லையா?":"No account?"):(lang==="ta"?"கணக்கு உள்ளதா?":"Have account?")} <strong>{mode==="login"?(lang==="ta"?"பதிவு":"Sign Up"):(lang==="ta"?"உள்நுழை":"Log In")}</strong></button></div>
+</div>}
+
+{/* PHONE OTP AUTH */}
+{authType==="phone"&&<div>
+<h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{lang==="ta"?"கைபேசி OTP":"Phone OTP Login"}</h3>
+<Input label={lang==="ta"?"கைபேசி எண்":"Mobile Number"} value={phone} onChange={setPhone} placeholder="+91 98765 43210" type="tel"/>
+{!otpSent?<Btn onClick={sendOtp} disabled={busy||!phone}>{busy?(lang==="ta"?"அனுப்புகிறது...":"Sending..."):(lang==="ta"?"OTP அனுப்பு":"Send OTP")}</Btn>
+:<div>
+<Input label="OTP" value={otp} onChange={setOtp} placeholder="123456" type="number"/>
+<Btn onClick={verifyOtp} disabled={busy||!otp}>{busy?(lang==="ta"?"சரிபார்க்கிறது...":"Verifying..."):(lang==="ta"?"OTP சரிபார்":"Verify OTP")}</Btn>
+<div style={{textAlign:"center",marginTop:10}}><button onClick={()=>{setOtpSent(false);setOtp("");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.mu,fontSize:12,cursor:"pointer"}}>{lang==="ta"?"மீண்டும் OTP அனுப்பு":"Resend OTP"}</button></div>
+</div>}
+<div style={{padding:10,background:C.bL,borderRadius:8,fontSize:11,color:C.bl,marginTop:12,textAlign:"center"}}>{lang==="ta"?"சோதனை: +919999999901, OTP: 123456":"Test: +919999999901, OTP: 123456"}</div>
+</div>}
+</Card></div></div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROFILE (#3 — existing crops as structured type+quantity list)
+// ═══════════════════════════════════════════════════════════════════════════
+const ProfileSetup=({lang,user,profile,onSave,onBack})=>{
+const[step,setStep]=useState(0);
+const[p,setP]=useState({name:profile?.name||"",phone:profile?.phone||"",district:profile?.district||"",block:profile?.block||"",village:profile?.village||""});
+const[land,setLand]=useState({soil:profile?.soil_type||"",water:profile?.water_source||"",survey:profile?.survey_number||"",lat:profile?.latitude?.toString()||"",lng:profile?.longitude?.toString()||"",area:profile?.land_area_acres?.toString()||""});
+// Existing crops as structured list
+const[crops,setCrops]=useState(()=>{try{return JSON.parse(profile?.notes||"[]")}catch(e){return[]}});
+const[addCropType,setAddCropType]=useState("");const[addCropQty,setAddCropQty]=useState("");
+const[saving,setSaving]=useState(false);
+const addCrop=()=>{if(!addCropType||!addCropQty)return;setCrops([...crops,{type:addCropType,qty:addCropQty}]);setAddCropType("");setAddCropQty("")};
+const save=async()=>{setSaving(true);await sb.from("profiles").update({name:p.name,phone:p.phone,district:p.district,block:p.block,village:p.village,soil_type:land.soil,water_source:land.water,survey_number:land.survey,latitude:land.lat?parseFloat(land.lat):null,longitude:land.lng?parseFloat(land.lng):null,land_area_acres:land.area?parseFloat(land.area):null,notes:JSON.stringify(crops)}).eq("id",user.id);setSaving(false);onSave()};
+const soilLabels=lang==="ta"?SOILS_TA:SOILS_EN;const waterLabels=lang==="ta"?WATERS_TA:WATERS_EN;
+
+return<div style={{maxWidth:520,margin:"0 auto"}}><Back onClick={onBack} lang={lang}/>
+<h2 style={{fontSize:20,fontWeight:800,marginBottom:4}}>{lang==="ta"?"சுயவிவரம்":"My Profile"}</h2>
+<Steps steps={[lang==="ta"?"தனிப்பட்ட":"Personal",lang==="ta"?"நிலம்":"Land",lang==="ta"?"பயிர்கள்":"Crops"]} cur={step}/>
+
+{step===0&&<div>
+<VInput lang={lang} label={lang==="ta"?"பெயர்":"Full Name"} value={p.name} onChange={v=>setP({...p,name:v})} placeholder="Name"/>
+<VInput lang={lang} label={lang==="ta"?"கைபேசி":"Mobile"} value={p.phone} onChange={v=>setP({...p,phone:v})} placeholder="+91..." type="tel"/>
+<VInput lang={lang} label={lang==="ta"?"மாவட்டம்":"District"} value={p.district} onChange={v=>setP({...p,district:v})} placeholder="District"/>
+<VInput lang={lang} label={lang==="ta"?"வட்டம்":"Block"} value={p.block} onChange={v=>setP({...p,block:v})} placeholder="Block"/>
+<VInput lang={lang} label={lang==="ta"?"கிராமம்":"Village"} value={p.village} onChange={v=>setP({...p,village:v})} placeholder="Village"/>
+<Btn onClick={()=>setStep(1)}>{lang==="ta"?"அடுத்து":"Next"} →</Btn>
+</div>}
+
+{step===1&&<div>
+<div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:C.mu,marginBottom:6}}>{lang==="ta"?"மண் வகை":"Soil Type"}</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{SOIL_KEYS.map((k,i)=><Chip key={k} label={soilLabels[i]} active={land.soil===k} onClick={()=>setLand({...land,soil:k})}/>)}</div></div>
+<div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:C.mu,marginBottom:6}}>{lang==="ta"?"நீர் ஆதாரம்":"Water Source"}</label><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{WATER_KEYS.map((k,i)=><Chip key={k} label={waterLabels[i]} active={land.water===k} onClick={()=>setLand({...land,water:k})}/>)}</div></div>
+<VInput lang={lang} label={lang==="ta"?"சர்வே எண்":"Survey No"} value={land.survey} onChange={v=>setLand({...land,survey:v})} placeholder="123/4A"/>
+<VInput lang={lang} label={lang==="ta"?"பரப்பு (ஏக்கர்)":"Area (acres)"} value={land.area} onChange={v=>setLand({...land,area:v})} placeholder="2.5" type="number"/>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+<VInput lang={lang} label={lang==="ta"?"அட்சரேகை":"Latitude"} value={land.lat} onChange={v=>setLand({...land,lat:v})} placeholder="12.69" type="number"/>
+<VInput lang={lang} label={lang==="ta"?"தீர்க்கரேகை":"Longitude"} value={land.lng} onChange={v=>setLand({...land,lng:v})} placeholder="80.01" type="number"/>
+</div>
+<button onClick={()=>{if(navigator.geolocation)navigator.geolocation.getCurrentPosition(pos=>setLand({...land,lat:pos.coords.latitude.toFixed(5),lng:pos.coords.longitude.toFixed(5)}))}} style={{width:"100%",padding:11,background:C.aL,border:`1.5px solid ${C.ac}33`,borderRadius:10,color:C.ac,fontSize:14,fontWeight:600,cursor:"pointer",marginBottom:14,fontFamily:"inherit"}}>📍 {lang==="ta"?"GPS பெறு":"Use GPS"}</button>
+<div style={{display:"flex",gap:10}}><Btn onClick={()=>setStep(0)} primary={false} style={{flex:1}}>{lang==="ta"?"முந்தையது":"Previous"}</Btn><Btn onClick={()=>setStep(2)} style={{flex:1}}>{lang==="ta"?"அடுத்து":"Next"} →</Btn></div>
+</div>}
+
+{step===2&&<div>
+<div style={{fontSize:14,fontWeight:700,marginBottom:10}}>{lang==="ta"?"இருக்கும் பயிர்கள்":"Existing Crops on Your Land"}</div>
+{crops.map((c,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:C.alt,borderRadius:10,marginBottom:6}}>
+<span style={{fontSize:16}}>🌱</span>
+<div style={{flex:1}}><span style={{fontWeight:600}}>{c.type}</span> — <span style={{color:C.mu}}>{c.qty}</span></div>
+<button onClick={()=>setCrops(crops.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.dg,cursor:"pointer",fontSize:16}}>×</button>
+</div>)}
+<Card style={{background:C.alt,border:`1.5px dashed ${C.ac}44`}}>
+<div style={{fontSize:13,fontWeight:600,color:C.mu,marginBottom:8}}>{lang==="ta"?"பயிர் சேர்":"Add Crop"}</div>
+<VInput lang={lang} label={lang==="ta"?"பயிர்/தாவர பெயர்":"Crop / Plant Name"} value={addCropType} onChange={setAddCropType} placeholder={lang==="ta"?"எ.கா. நெல், தேங்காய், மாம்பழம்":"e.g. Paddy, Coconut, Mango"}/>
+<VInput lang={lang} label={lang==="ta"?"அளவு/ஏக்கர்":"Quantity / Acres"} value={addCropQty} onChange={setAddCropQty} placeholder={lang==="ta"?"எ.கா. 10 மரங்கள் / 2 ஏக்கர்":"e.g. 10 trees / 2 acres"}/>
+<Btn onClick={addCrop} primary={false}>+ {lang==="ta"?"சேர்":"Add"}</Btn>
+</Card>
+<div style={{display:"flex",gap:10,marginTop:14}}><Btn onClick={()=>setStep(1)} primary={false} style={{flex:1}}>{lang==="ta"?"முந்தையது":"Previous"}</Btn><Btn onClick={save} disabled={saving} style={{flex:1}}>{saving?(lang==="ta"?"ஏற்றுகிறது...":"Saving..."):("✓ "+(lang==="ta"?"சேமி":"Save"))}</Btn></div>
+</div>}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW PLANT REQUESTS (#2 — 5 types only, status flow)
+// ═══════════════════════════════════════════════════════════════════════════
+const NewPlants=({lang,user})=>{const[sel,setSel]=useState(null);const[count,setCount]=useState("");const[reqs,setReqs]=useState([]);const[loading,setLoading]=useState(true);const[justAdded,setJustAdded]=useState(false);
+const load=async()=>{const{data}=await sb.from("plant_requests").select("*").eq("farmer_id",user.id).order("created_at",{ascending:false});setReqs(data||[]);setLoading(false)};
+useEffect(()=>{load()},[]);
+const add=async()=>{if(!sel||!count)return;await sb.from("plant_requests").insert({farmer_id:user.id,species:sel.id,quantity:parseInt(count)});
+// Also create a plant entry for the journal
+await sb.from("plants").insert({farmer_id:user.id,name:`${sel[lang]} (${count})`,species:sel.id,status:"healthy",growth_stage:"seedling",plant_type:"sapling"});
+setSel(null);setCount("");setJustAdded(true);setTimeout(()=>setJustAdded(false),3000);load()};
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"புதிய தாவரங்கள் கோரு":"Request New Plants"}</h2>
+{justAdded&&<Card style={{background:C.aL,textAlign:"center",animation:"fadeIn .4s"}}><div style={{fontSize:16,fontWeight:700,color:C.ac}}>✅ {lang==="ta"?"கோரிக்கை முடிந்தது!":"Request Complete!"}</div><div style={{fontSize:12,color:C.mu,marginTop:4}}>{lang==="ta"?"உங்கள் நாற்றுகள் விரைவில் வழங்கப்படும்":"Your saplings will be delivered soon"}</div></Card>}
+<Card style={{background:C.aL,border:`1.5px solid ${C.ac}33`}}>
+<div style={{fontSize:13,fontWeight:700,color:C.aD,marginBottom:10}}>{lang==="ta"?"தாவர வகை தேர்வு":"Select plant type"}</div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:12}}>
+{PLANTS5.map(c=><button key={c.id} onClick={()=>setSel(c)} style={{padding:"12px 4px",borderRadius:12,border:`2px solid ${sel?.id===c.id?C.ac:C.bdr}`,background:sel?.id===c.id?C.aL:C.sf,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:28}}>{c.icon}</div><div style={{fontSize:10,fontWeight:600,color:sel?.id===c.id?C.aD:C.dm,marginTop:2}}>{c[lang]}</div></button>)}
+</div>
+{sel&&<div><Input label={lang==="ta"?"எத்தனை?":"How many?"} value={count} onChange={setCount} placeholder="100" type="number"/>
+<Btn onClick={add}>🌱 {lang==="ta"?"கோரிக்கை சேர்":"Request"} — {sel.icon} {sel[lang]}</Btn></div>}
+</Card>
+{reqs.length>0&&<div style={{fontSize:15,fontWeight:700,marginTop:16,marginBottom:10}}>{lang==="ta"?"என் கோரிக்கைகள்":"My Requests"}</div>}
+{reqs.map(r=>{const cr=PLANTS5.find(c=>c.id===r.species);return<Card key={r.id} style={{display:"flex",alignItems:"center",gap:12}}>
+<div style={{width:40,height:40,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{cr?.icon||"🌱"}</div>
+<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{cr?.[lang]||r.species}</div><div style={{fontSize:12,color:C.mu}}>{r.quantity} {lang==="ta"?"தாவரங்கள்":"plants"}</div></div>
+<Pill label={r.status==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):r.status==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):(lang==="ta"?"கோரப்பட்டது":"Requested")} color={r.status==="delivered"?C.ac:r.status==="approved"?C.bl:C.wr} bg={r.status==="delivered"?C.aL:r.status==="approved"?C.bL:C.wL}/>
+</Card>})}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GROWTH JOURNAL (#2 — planting photos first, then quarterly with geotag)
+// ═══════════════════════════════════════════════════════════════════════════
+const GrowthJournal=({lang,user})=>{const[plants,setPlants]=useState([]);const[updates,setUpdates]=useState([]);const[sel,setSel]=useState(null);
+const[uploading,setUploading]=useState(false);const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();
+const emojis=["","😟","😐","🙂","😊","🌟"];
+const loadP=async()=>{const{data}=await sb.from("plants").select("*").eq("farmer_id",user.id);setPlants(data||[])};
+const loadU=async pid=>{const{data}=await sb.from("growth_updates").select("*").eq("plant_id",pid).order("month_number",{ascending:false});setUpdates(data||[])};
+useEffect(()=>{loadP()},[]);useEffect(()=>{if(sel)loadU(sel.id)},[sel]);
+
+const handleUpload=async e=>{const file=e.target.files?.[0];if(!file)return;
+// Get geotag from device
+let geoLat=null,geoLng=null;
+try{const pos=await new Promise((res,rej)=>{navigator.geolocation.getCurrentPosition(res,rej,{timeout:10000})});geoLat=pos.coords.latitude;geoLng=pos.coords.longitude}catch(e){}
+const path=`${user.id}/${sel.id}/${Date.now()}.${file.name.split(".").pop()}`;
+const{error:upErr}=await sb.storage.from("photos").upload(path,file);if(upErr){alert("Upload failed: "+upErr.message);return}
+const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);
+const maxM=updates.length>0?Math.max(...updates.map(u=>u.month_number)):0;
+// Store geotag in notes for admin verification
+const geoNote=geoLat?`[📍${geoLat.toFixed(5)},${geoLng.toFixed(5)}] ${notes}`:notes;
+await sb.from("growth_updates").insert({plant_id:sel.id,farmer_id:user.id,month_number:maxM+1,photo_url:publicUrl,height_cm:height?parseInt(height):null,notes:geoNote});
+setHeight("");setNotes("");setUploading(false);loadU(sel.id)};
+
+if(sel)return<div>
+<button onClick={()=>{setSel(null);setUpdates([])}} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:12,fontFamily:"inherit"}}>← {lang==="ta"?"அனைத்து":"All plants"}</button>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{fontSize:18,fontWeight:800,margin:0}}>{sel.name}</h3><Pill label={`${updates.length} ${lang==="ta"?"புதுப்பிப்புகள்":"updates"}`} color={C.ac} bg={C.aL}/></div>
+
+{!uploading?<button onClick={()=>setUploading(true)} style={{width:"100%",padding:14,background:C.aL,border:`2px dashed ${C.ac}44`,borderRadius:14,color:C.ac,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:14}}>📸 {updates.length===0?(lang==="ta"?"நடவு படம் பதிவேற்று":"Upload Planting Photo"):(lang==="ta"?"காலாண்டு படம் பதிவேற்று":"Upload Quarterly Photo")}</button>
+:<Card style={{background:C.aL,border:`1.5px solid ${C.ac}33`}}>
+<div style={{fontSize:14,fontWeight:700,color:C.aD,marginBottom:8}}>📸 {updates.length===0?(lang==="ta"?"நடவு படம்":"Planting Photo"):`${lang==="ta"?"காலாண்டு":"Quarter"} ${Math.ceil((updates.length+1)/3)}`}</div>
+<Card style={{background:C.wL,border:"none",padding:12,marginBottom:8}}><div style={{fontSize:12,color:C.wr,lineHeight:1.5}}>{lang==="ta"?"📏 20-30செமீ தொலைவில் · ☀️ இயற்கை ஒளி · 🎯 தாவரத்தை மையமாக வை · 📍 இடம் தானாக பதிவாகும்":"📏 Hold 20-30cm away · ☀️ Natural light · 🎯 Center the plant · 📍 Location auto-recorded"}</div></Card>
+<VInput lang={lang} label={lang==="ta"?"உயரம் (செமீ)":"Height (cm)"} value={height} onChange={setHeight} placeholder="45" type="number"/>
+<VInput lang={lang} label={lang==="ta"?"குறிப்புகள்":"Notes"} value={notes} onChange={setNotes} placeholder={lang==="ta"?"எப்படி வளர்கிறது?":"How is it growing?"}/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setUploading(false)} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>fileRef.current?.click()} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn></div>
+<input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
+</Card>}
+
+{updates.length===0&&<Card style={{textAlign:"center",padding:24}}><div style={{fontSize:32,marginBottom:8}}>📷</div><div style={{fontSize:13,color:C.dm}}>{lang==="ta"?"நடவு படம் பதிவேற்றி நிர்வாகி ஒப்புதல் பெறுங்கள்":"Upload planting photo for admin approval"}</div></Card>}
+{updates.map(u=><Card key={u.id}>
+<div style={{display:"flex",gap:12}}>
+{u.photo_url&&<img src={u.photo_url} style={{width:80,height:80,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
+<div style={{flex:1}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:14,fontWeight:700}}>{u.month_number===1?(lang==="ta"?"நடவு":"Planting"):`${lang==="ta"?"மாதம்":"Month"} ${u.month_number}`}</span><span style={{fontSize:11,color:C.dm}}>{u.created_at?.slice(0,10)}</span></div>
+{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}
+{u.notes&&<div style={{fontSize:12,color:C.mu,fontStyle:"italic",marginTop:2}}>📝 {u.notes.replace(/\[📍[\d.,]+\]\s*/,"")}</div>}
+{u.notes?.includes("[📍")&&<div style={{fontSize:10,color:C.dm,marginTop:2}}>📍 {lang==="ta"?"இடம் பதிவு":"Location verified"}</div>}
+</div></div>
+{u.admin_rating?<div style={{marginTop:10,padding:10,background:`${C.bl}08`,borderRadius:8,borderLeft:`3px solid ${C.bl}`}}>
+<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:700,color:C.bl}}>👨‍💼 {u.admin_rating>=4?"👍":"💬"} {lang==="ta"?"நிர்வாகி":"Admin"}</span><span>{emojis[u.admin_rating]} {u.admin_rating}/5</span></div>
+{u.admin_comment&&<div style={{fontSize:12,color:C.mu,marginTop:4}}>{u.admin_comment}</div>}
+</div>:<div style={{marginTop:8,padding:8,background:C.alt,borderRadius:8,fontSize:11,color:C.dm,textAlign:"center"}}>⏳ {lang==="ta"?"மதிப்பீடு நிலுவையில்":"Awaiting review"}</div>}
+</Card>)}
+{updates.length>=2&&<Card><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📈 {lang==="ta"?"வளர்ச்சி":"Growth"}</div><div style={{display:"flex",gap:6,overflowX:"auto"}}>{[...updates].reverse().map(u=><div key={u.id} style={{flexShrink:0,textAlign:"center"}}>{u.photo_url&&<img src={u.photo_url} style={{width:56,height:56,objectFit:"cover",borderRadius:8}}/>}<div style={{fontSize:9,fontWeight:700,color:C.mu}}>M{u.month_number}</div>{u.height_cm&&<div style={{fontSize:9,color:C.dm}}>{u.height_cm}cm</div>}</div>)}</div></Card>}
+</div>;
+
+return<div><div style={{fontSize:15,fontWeight:700,marginBottom:12}}>📷 {lang==="ta"?"வளர்ச்சி பதிவு":"Growth Journal"}</div>
+{plants.length===0&&<Card style={{textAlign:"center",padding:20,color:C.dm,fontSize:13}}>{lang==="ta"?"முதலில் தாவரம் கோரிக்கை சேர்":"Request plants first"}</Card>}
+{plants.map(pl=><Card key={pl.id} style={{cursor:"pointer"}} onClick={()=>setSel(pl)}>
+<div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:44,height:44,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||ALLCROPS.find(c=>c.id===pl.species)?.icon||"🌿"}</div>
+<div style={{flex:1}}><div style={{fontSize:15,fontWeight:700}}>{pl.name}</div><div style={{fontSize:12,color:C.mu}}>{lang==="ta"?"படங்கள் பார்க்க":"Tap to view & upload"}</div></div><span style={{color:C.dm}}>→</span></div>
+</Card>)}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DISEASE CHECK (#5 — use Claude API via artifact context, or show pending)
+// ═══════════════════════════════════════════════════════════════════════════
+const DiseaseCheck=({lang,user})=>{const[step,setStep]=useState(0);
+const[cropName,setCropName]=useState("");const[details,setDetails]=useState("");
+const[photo,setPhoto]=useState(null);const[photoFile,setPhotoFile]=useState(null);
+const[comment,setComment]=useState("");const[saved,setSaved]=useState(false);const[saving,setSaving]=useState(false);const fileRef=useRef();
+
+const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setPhotoFile(f);const r=new FileReader();r.onload=ev=>{setPhoto(ev.target.result);setStep(2)};r.readAsDataURL(f)};
+
+const saveReport=async()=>{if(!cropName)return;setSaving(true);let photoUrl="";
+if(photoFile){const path=`${user.id}/pest/${Date.now()}.${photoFile.name.split(".").pop()}`;await sb.storage.from("photos").upload(path,photoFile);const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);photoUrl=publicUrl}
+await sb.from("pest_checks").insert({farmer_id:user.id,crop_type:cropName,photo_url:photoUrl,diagnosis:"Pending review",severity:"unknown",diagnosed_by:"pending",admin_notes:details+(comment?"\n---\nFarmer notes: "+comment:"")});
+setSaving(false);setSaved(true)};
+
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:4}}>{lang==="ta"?"நோய் சோதனை":"Disease Check"}</h2>
+<Steps steps={[lang==="ta"?"விவரம்":"Details",lang==="ta"?"படம்":"Photo",lang==="ta"?"சேமி":"Submit"]} cur={step}/>
+
+{step===0&&<div>
+<VInput lang={lang} label={lang==="ta"?"பயிர் / தாவர பெயர்":"Crop / Plant Name"} value={cropName} onChange={setCropName} placeholder={lang==="ta"?"எ.கா. மாம்பழம், தேங்காய், நெல்":"e.g. Mango, Coconut, Paddy"}/>
+<VInput lang={lang} label={lang==="ta"?"என்ன பிரச்சினை? விவரங்கள்":"What's the problem? Details"} value={details} onChange={setDetails} placeholder={lang==="ta"?"இலைகளில் மஞ்சள் புள்ளிகள், பூச்சிகள் தெரிகின்றன, வளர்ச்சி குறைவு...":"Yellow spots on leaves, insects visible, slow growth..."} multi/>
+<Card style={{background:C.wL,borderLeft:`3px solid ${C.wr}`,marginBottom:14}}>
+<div style={{fontSize:14,fontWeight:700,color:C.wr,marginBottom:8}}>📸 {lang==="ta"?"படம் எடுக்கும் குறிப்புகள்":"Photo Tips"}</div>
+<div style={{fontSize:13,color:C.tx,lineHeight:1.6}}>{lang==="ta"?"📏 20-30செமீ தொலைவில் · ☀️ இயற்கை ஒளி, ஃபிளாஷ் வேண்டாம் · 🎯 சேதத்தை மையமாக வை · 🌿 ஆரோக்கிய + பாதிப்பு இரண்டும் சேர்":"📏 Hold 20-30cm away · ☀️ Natural light, no flash · 🎯 Center the damage · 🌿 Include healthy + affected parts"}</div>
+</Card>
+<Btn onClick={()=>setStep(1)} disabled={!cropName}>📸 {lang==="ta"?"படம் எடுக்க தொடர்":"Continue to Photo"}</Btn>
+</div>}
+
+{step===1&&<div>
+<div style={{marginBottom:10,fontSize:13,color:C.mu}}>🌱 {cropName} {details?`— ${details.slice(0,50)}...`:""}</div>
+<div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.bdr}`,borderRadius:14,padding:"50px 24px",textAlign:"center",cursor:"pointer",background:C.alt}}>
+<div style={{fontSize:44,marginBottom:12}}>📸</div><div style={{fontSize:15,fontWeight:600}}>{lang==="ta"?"படம் எடுக்க தட்டு":"Tap to capture"}</div>
+<input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handlePhoto}/></div>
+</div>}
+
+{step===2&&<div style={{animation:"fadeIn .4s"}}>
+<div style={{borderRadius:14,overflow:"hidden",marginBottom:14}}><img src={photo} style={{width:"100%",maxHeight:250,objectFit:"cover",display:"block"}}/></div>
+<Card style={{marginBottom:10}}>
+<div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🌱 {cropName}</div>
+{details&&<div style={{fontSize:12,color:C.mu}}>{details}</div>}
+</Card>
+{!saved?<div>
+<Card style={{background:C.bL,borderLeft:`3px solid ${C.bl}`}}>
+<div style={{fontSize:14,fontWeight:700,color:C.bl,marginBottom:4}}>📤 {lang==="ta"?"படம் நிர்வாகிக்கு அனுப்பப்படும்":"Photo will be sent to admin for review"}</div>
+<div style={{fontSize:12,color:C.mu}}>{lang==="ta"?"நிர்வாகி நோயறிதல் + சிகிச்சை குறிப்புகள் வழங்குவார்":"Admin will provide diagnosis + treatment advice"}</div>
+</Card>
+<VInput lang={lang} label={lang==="ta"?"கூடுதல் குறிப்புகள்":"Additional notes"} value={comment} onChange={setComment} placeholder={lang==="ta"?"வேறு ஏதாவது?":"Anything else?"} multi/>
+<div style={{display:"flex",gap:10}}><Btn onClick={()=>{setPhoto(null);setPhotoFile(null);setStep(1)}} primary={false} style={{flex:1}}>🔄 {lang==="ta"?"மீண்டும்":"Retake"}</Btn><Btn onClick={saveReport} disabled={saving} style={{flex:1}}>📤 {saving?(lang==="ta"?"அனுப்புகிறது...":"Sending..."):(lang==="ta"?"அனுப்பு":"Submit")}</Btn></div>
+</div>:<Card style={{background:C.aL,textAlign:"center"}}><div style={{fontSize:20,fontWeight:700,color:C.ac,marginBottom:4}}>✅ {lang==="ta"?"சமர்ப்பிக்கப்பட்டது!":"Submitted!"}</div><div style={{fontSize:13,color:C.mu}}>{lang==="ta"?"நிர்வாகி விரைவில் பதிலளிப்பார். அறிவிப்புகளை சரிபார்க்கவும்.":"Admin will review shortly. Check notifications for updates."}</div></Card>}
+</div>}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COMMUNITY (#4 — likes working + image + comments)
+// ═══════════════════════════════════════════════════════════════════════════
+const Community=({lang,user})=>{const[posts,setPosts]=useState([]);const[np,setNp]=useState("");const[npPhoto,setNpPhoto]=useState(null);const[npFile,setNpFile]=useState(null);
+const[replyTo,setReplyTo]=useState(null);const[replyText,setReplyText]=useState("");const[replies,setReplies]=useState({});const[likedPosts,setLikedPosts]=useState({});
+const[loading,setLoading]=useState(true);const fileRef=useRef();
+
+const load=async()=>{const{data}=await sb.from("community_posts").select("*,profiles(name,village)").order("created_at",{ascending:false}).limit(30);setPosts(data||[]);
+if(data?.length){const ids=data.map(p=>p.id);const{data:reps}=await sb.from("community_replies").select("*,profiles(name)").in("post_id",ids).order("created_at");const g={};(reps||[]).forEach(r=>{if(!g[r.post_id])g[r.post_id]=[];g[r.post_id].push(r)});setReplies(g);
+// Check which posts user has liked
+const{data:myLikes}=await sb.from("community_likes").select("post_id").eq("user_id",user.id);const lk={};(myLikes||[]).forEach(l=>lk[l.post_id]=true);setLikedPosts(lk)}
+setLoading(false)};
+useEffect(()=>{load()},[]);
+
+const post=async()=>{if(!np.trim()&&!npFile)return;let photoUrl="";if(npFile){const path=`${user.id}/community/${Date.now()}.${npFile.name.split(".").pop()}`;await sb.storage.from("photos").upload(path,npFile);const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);photoUrl=publicUrl}
+await sb.from("community_posts").insert({author_id:user.id,content:np,photo_url:photoUrl||null});setNp("");setNpPhoto(null);setNpFile(null);load()};
+
+const toggleLike=async(postId)=>{if(likedPosts[postId]){await sb.from("community_likes").delete().eq("post_id",postId).eq("user_id",user.id);await sb.from("community_posts").update({likes:Math.max(0,(posts.find(p=>p.id===postId)?.likes||1)-1)}).eq("id",postId)}else{await sb.from("community_likes").insert({post_id:postId,user_id:user.id});await sb.from("community_posts").update({likes:(posts.find(p=>p.id===postId)?.likes||0)+1}).eq("id",postId)}load()};
+
+const reply=async(postId)=>{if(!replyText.trim())return;await sb.from("community_replies").insert({post_id:postId,author_id:user.id,content:replyText});setReplyText("");setReplyTo(null);load()};
+const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setNpFile(f);const r=new FileReader();r.onload=ev=>setNpPhoto(ev.target.result);r.readAsDataURL(f)};
+
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"சமூகம்":"Community"}</h2>
+<Card style={{background:C.alt}}>
+<VInput lang={lang} value={np} onChange={setNp} placeholder={lang==="ta"?"பதிவு எழுது...":"Write a post..."} multi/>
+{npPhoto&&<div style={{marginBottom:10}}><img src={npPhoto} style={{width:"100%",maxHeight:120,objectFit:"cover",borderRadius:8}}/></div>}
+<div style={{display:"flex",gap:8}}>
+<button onClick={()=>fileRef.current?.click()} style={{padding:"7px 12px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>📷 {lang==="ta"?"படம்":"Photo"}</button>
+<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
+<div style={{flex:1}}/><button onClick={post} style={{padding:"7px 18px",background:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"பதிவிடு":"Post"}</button>
+</div></Card>
+{posts.map(p=><Card key={p.id}>
+<div style={{display:"flex",gap:8,marginBottom:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>👤</div><div><div style={{fontSize:13,fontWeight:700}}>{p.profiles?.name||"Farmer"}</div><div style={{fontSize:10,color:C.dm}}>{p.profiles?.village||""} · {p.created_at?.slice(0,10)}</div></div></div>
+<div style={{fontSize:14,lineHeight:1.6,marginBottom:8}}>{p.content}</div>
+{p.photo_url&&<img src={p.photo_url} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:8,marginBottom:8}}/>}
+<div style={{display:"flex",gap:14,borderTop:`1px solid ${C.bdr}`,paddingTop:8}}>
+<button onClick={()=>toggleLike(p.id)} style={{background:"none",border:"none",color:likedPosts[p.id]?C.ac:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>{likedPosts[p.id]?"👍":"👍"} {lang==="ta"?"உதவியாக":"Helpful"} ({p.likes||0})</button>
+<button onClick={()=>setReplyTo(replyTo===p.id?null:p.id)} style={{background:"none",border:"none",color:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>💬 {lang==="ta"?"பதில்":"Reply"} ({(replies[p.id]||[]).length})</button>
+</div>
+{(replies[p.id]||[]).map(r=><div key={r.id} style={{marginTop:8,marginLeft:16,padding:8,background:C.alt,borderRadius:8}}><span style={{fontSize:12,fontWeight:700}}>{r.profiles?.name||"User"}: </span><span style={{fontSize:12,color:C.mu}}>{r.content}</span></div>)}
+{replyTo===p.id&&<div style={{marginTop:8,display:"flex",gap:6}}><input value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={(lang==="ta"?"பதில்":"Reply")+"..."} style={{flex:1,padding:"8px 10px",border:`1px solid ${C.bdr}`,borderRadius:8,fontSize:13,outline:"none",fontFamily:"inherit"}}/><button onClick={()=>reply(p.id)} style={{padding:"8px 14px",background:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"பதில்":"Reply"}</button></div>}
+</Card>)}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+const Notifs=({lang,user})=>{const[items,setItems]=useState([]);const[loading,setLoading]=useState(true);
+useEffect(()=>{(async()=>{const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farmer_id",user.id).not("admin_rating","is",null).order("admin_review_date",{ascending:false}).limit(20);
+const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",user.id).not("admin_notes","is",null).order("created_at",{ascending:false}).limit(10);
+const all=[...(gu||[]).map(u=>({id:u.id,icon:"📝",text:`${u.plants?.name||"Plant"} M${u.month_number} — ${["","😟","😐","🙂","😊","🌟"][u.admin_rating]} ${u.admin_rating}/5`,sub:u.admin_comment,date:u.admin_review_date?.slice(0,10)||"",type:"review"})),
+...(pc||[]).map(p=>({id:p.id,icon:"🔬",text:`${lang==="ta"?"நோய்":"Disease"}: ${p.diagnosis||"—"}`,sub:p.admin_notes,date:p.created_at?.slice(0,10)||"",type:"pest"}))].sort((a,b)=>b.date.localeCompare(a.date));
+setItems(all);setLoading(false)})()},[]);
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>🔔 {lang==="ta"?"அறிவிப்புகள்":"Notifications"}</h2>
+{loading&&<div style={{color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</div>}
+{!loading&&items.length===0&&<Card style={{textAlign:"center",padding:30}}><div style={{fontSize:32,marginBottom:8}}>🔔</div><div style={{color:C.dm}}>{lang==="ta"?"அறிவிப்புகள் இல்லை":"No notifications"}</div></Card>}
+{items.map(n=><Card key={n.id}><div style={{display:"flex",gap:10}}><div style={{width:36,height:36,borderRadius:10,background:n.type==="review"?C.bL:C.wL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{n.icon}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{n.text}</div>{n.sub&&<div style={{fontSize:12,color:C.mu,marginTop:2}}>"{n.sub}"</div>}<div style={{fontSize:11,color:C.dm,marginTop:2}}>{n.date}</div></div></div></Card>)}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN (#1 — full farmer drill-down with plants + growth + pest + map)
+// ═══════════════════════════════════════════════════════════════════════════
+const AdminDash=({lang,onSwitch})=>{const[tab,setTab]=useState("farmers");const[farmers,setFarmers]=useState([]);const[pending,setPending]=useState([]);
+const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
+const[revId,setRevId]=useState(null);const[rating,setRating]=useState(0);const[comment,setComment]=useState("");const[loading,setLoading]=useState(true);
+
+const load=async()=>{setLoading(true);const{data:f}=await sb.from("profiles").select("*").eq("role","farmer");setFarmers(f||[]);
+const{data:p}=await sb.from("growth_updates").select("*,plants(name,species),profiles!growth_updates_farmer_id_fkey(name,village,district)").is("admin_rating",null).order("created_at",{ascending:false});setPending(p||[]);setLoading(false)};
+useEffect(()=>{load()},[]);
+
+const openFarmer=async f=>{setSelF(f);const{data:pl}=await sb.from("plants").select("*").eq("farmer_id",f.id);setFPlants(pl||[]);
+const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farmer_id",f.id).order("created_at",{ascending:false});setFUpdates(gu||[]);
+const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",f.id).order("created_at",{ascending:false});setFPests(pc||[])};
+
+const review=async()=>{if(!rating)return;const u=(await sb.auth.getUser()).data.user;await sb.from("growth_updates").update({admin_rating:rating,admin_comment:comment,admin_reviewer_id:u.id,admin_review_date:new Date().toISOString()}).eq("id",revId);setRevId(null);setRating(0);setComment("");load();if(selF)openFarmer(selF)};
+
+if(loading)return<Card style={{textAlign:"center",padding:40,color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>;
+
+// Farmer detail
+if(selF){let existingCrops=[];try{existingCrops=JSON.parse(selF.notes||"[]")}catch(e){}
+return<div style={{maxWidth:700,margin:"0 auto"}}>
+<button onClick={()=>setSelF(null)} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:14,fontFamily:"inherit"}}>← {lang==="ta"?"அனைத்து":"All Farmers"}</button>
+<Card style={{borderLeft:`4px solid ${C.ac}`}}>
+<h3 style={{fontSize:18,fontWeight:800,marginBottom:4}}>{selF.name||selF.phone||"(unnamed)"}</h3>
+<div style={{fontSize:13,color:C.mu}}>📍 {[selF.village,selF.block,selF.district].filter(Boolean).join(", ")||"—"}</div>
+<div style={{fontSize:13,color:C.mu}}>📞 {selF.phone||"—"} · {selF.soil_type||"—"} · {selF.water_source||"—"}</div>
+{existingCrops.length>0&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>{existingCrops.map((c,i)=><Pill key={i} label={`🌱 ${c.type}: ${c.qty}`} color={C.ac} bg={C.aL}/>)}</div>}
+</Card>
+{selF.latitude&&<LiveMap lat={selF.latitude} lng={selF.longitude} lang={lang}/>}
+
+<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🌳 {lang==="ta"?"தாவரங்கள்":"Plants"} ({fPlants.length})</div>
+{fPlants.map(pl=><Card key={pl.id} style={{padding:12}}><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:20}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||"🌿"}</span><span style={{fontSize:14,fontWeight:600}}>{pl.name}</span></div></Card>)}
+
+<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>📷 {lang==="ta"?"வளர்ச்சி":"Growth"} ({fUpdates.length})</div>
+{fUpdates.map(u=><Card key={u.id}>
+<div style={{display:"flex",gap:10}}>{u.photo_url&&<img src={u.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
+<div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{u.plants?.name} — M{u.month_number}</div>{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{u.notes&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{u.notes.replace(/\[📍[\d.,]+\]\s*/,"")}</div>}
+{u.notes?.includes("[📍")&&<div style={{fontSize:10,color:C.bl}}>📍 Geo: {u.notes.match(/\[📍([\d.,]+)\]/)?.[1]||""}</div>}
+{u.admin_rating?<Pill label={`${["","😟","😐","🙂","😊","🌟"][u.admin_rating]} ${u.admin_rating}/5 ${u.admin_comment||""}`} color={C.bl} bg={C.bL}/>:<Pill label="Pending" color={C.wr} bg={C.wL}/>}
+</div></div>
+{!u.admin_rating&&(revId===u.id?<div style={{marginTop:10,background:C.aL,padding:12,borderRadius:10}}>
+<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
+<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder={lang==="ta"?"ஆலோசனை...":"Advice..."}/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>{lang==="ta"?"பின்":"Back"}</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>{lang==="ta"?"சமர்ப்பி":"Submit"}</Btn></div>
+</div>:<button onClick={()=>setRevId(u.id)} style={{marginTop:8,width:"100%",padding:10,background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer"}}>📝 Review</button>)}
+</Card>)}
+
+{fPests.length>0&&<><div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🔬 {lang==="ta"?"நோய் அறிக்கைகள்":"Disease Reports"} ({fPests.length})</div>
+{fPests.map(p=><Card key={p.id}><div style={{display:"flex",gap:10}}>{p.photo_url&&<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8}}/>}<div><div style={{fontSize:13,fontWeight:600}}>{p.diagnosis||"Pending"}</div><div style={{fontSize:12,color:C.mu}}>{p.crop_type} · {p.created_at?.slice(0,10)}</div>{p.admin_notes&&<div style={{fontSize:12,color:C.bl,marginTop:2}}>💬 {p.admin_notes}</div>}</div></div></Card>)}</>}
+</div>}
+
+// Main admin
+return<div style={{maxWidth:700,margin:"0 auto"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+<h2 style={{fontSize:22,fontWeight:800}}>{lang==="ta"?"நிர்வாக டாஷ்போர்டு":"Admin Dashboard"}</h2>
+<button onClick={onSwitch} style={{padding:"8px 14px",background:C.aL,border:`1.5px solid ${C.ac}33`,borderRadius:10,color:C.ac,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>👨‍🌾 {lang==="ta"?"விவசாயி":"Farmer View"}</button>
+</div>
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+<Card style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:C.ac}}>{farmers.length}</div><div style={{fontSize:11,color:C.dm}}>{lang==="ta"?"விவசாயிகள்":"Farmers"}</div></Card>
+<Card style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:C.wr}}>{pending.length}</div><div style={{fontSize:11,color:C.dm}}>{lang==="ta"?"நிலுவை":"Pending"}</div></Card>
+</div>
+<div style={{display:"flex",borderBottom:`2px solid ${C.bdr}`,marginBottom:16}}>
+{[{k:"farmers",l:`👩‍🌾 ${lang==="ta"?"விவசாயிகள்":"Farmers"}`},{k:"pending",l:`⏳ ${lang==="ta"?"நிலுவை":"Pending"}`}].map(tb=><button key={tb.k} onClick={()=>setTab(tb.k)} style={{padding:"9px 14px",border:"none",borderBottom:`2px solid ${tab===tb.k?C.ac:"transparent"}`,background:"transparent",color:tab===tb.k?C.ac:C.mu,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:-2,fontFamily:"inherit"}}>{tb.l}</button>)}
+</div>
+{tab==="farmers"&&farmers.map(f=><Card key={f.id} style={{cursor:"pointer"}} onClick={()=>openFarmer(f)}>
+<div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:40,height:40,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👨‍🌾</div>
+<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{f.name||f.phone||"(unnamed)"}</div><div style={{fontSize:12,color:C.mu}}>{[f.village,f.district].filter(Boolean).join(", ")||"—"}</div></div><span style={{color:C.dm}}>→</span></div></Card>)}
+{tab==="pending"&&(pending.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"முடிந்தது!":"All done!"}</Card>:pending.map(u=><Card key={u.id}>
+<div style={{display:"flex",gap:10,marginBottom:8}}>{u.photo_url&&<img src={u.photo_url} style={{width:70,height:70,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
+<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{u.profiles?.name||"Farmer"} — {u.plants?.name||"Plant"}</div><div style={{fontSize:12,color:C.mu}}>M{u.month_number} · {u.profiles?.village||""}</div>{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{u.notes&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{u.notes.replace(/\[📍[\d.,]+\]\s*/,"")}</div>}</div></div>
+{revId===u.id?<div style={{background:C.aL,padding:12,borderRadius:10}}>
+<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
+<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder="Advice..."/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>Back</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>Submit</Btn></div>
+</div>:<Btn onClick={()=>setRevId(u.id)} primary={false}>📝 Review</Btn>}
+</Card>))}
+</div>};
+
+// News
+const News=({lang})=>{const items=[{i:"🌧️",t:{en:"Heavy rain alert TN coastal",ta:"கடலோர கனமழை"},s:"IMD"},{i:"🏛️",t:{en:"PM-KISAN installment",ta:"PM-KISAN தவணை"},s:"GoI"},{i:"🌱",t:{en:"TNAU mango tips",ta:"TNAU மாம்பழ குறிப்பு"},s:"TNAU"},{i:"💰",t:{en:"Coconut +12% Coimbatore",ta:"தேங்காய் +12%"},s:"Agmarknet"}];
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"விவசாய ஆலோசனை":"Farm Advisory"}</h2>{items.map((n,i)=><Card key={i}><div style={{display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:20}}>{n.i}</span><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{n.t[lang]}</div><div style={{fontSize:11,color:C.dm}}>{n.s}</div></div></div></Card>)}</div>};
+
+// Home
+const Home=({lang,profile,onNav})=>{return<div style={{maxWidth:520,margin:"0 auto"}}>
+<div style={{background:`linear-gradient(135deg,${C.ac},${C.aD})`,borderRadius:18,padding:22,marginBottom:16,color:"#fff"}}>
+<div style={{fontSize:22,fontWeight:800,marginBottom:4}}>{lang==="ta"?"வணக்கம்!":"Welcome!"} {profile?.name?profile.name.split(" ")[0]:"👋"}</div>
+<div style={{fontSize:13,opacity:.85}}>{lang==="ta"?"100 நாற்றுகள். ஒரு இலக்கு.":"100 Saplings. One Mission."}</div>
+{!profile?.name&&<button onClick={()=>onNav("prof")} style={{marginTop:12,padding:"9px 18px",background:"rgba(255,255,255,.25)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"சுயவிவரம் அமை":"Set Up Profile"}</button>}
+</div>
+{profile?.latitude&&<WeatherCard lang={lang} lat={profile.latitude} lng={profile.longitude}/>}
+<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+{[{i:"🌱",l:lang==="ta"?"புதிய தாவரங்கள்":"New Plants",n:"plants"},{i:"🔬",l:lang==="ta"?"நோய் சோதனை":"Disease Check",n:"pest"},{i:"📰",l:lang==="ta"?"செய்தி":"News",n:"news"},{i:"👥",l:lang==="ta"?"சமூகம்":"Community",n:"comm"}].map(a=><button key={a.n} onClick={()=>onNav(a.n)} style={{padding:"16px",borderRadius:14,border:`1.5px solid ${C.bdr}`,background:C.sf,cursor:"pointer",textAlign:"center",boxShadow:C.sh}}><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:13,fontWeight:600}}>{a.l}</div></button>)}
+</div>
+{profile?.latitude&&<LiveMap lat={profile.latitude} lng={profile.longitude} lang={lang}/>}
+</div>};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APP ROOT
+// ═══════════════════════════════════════════════════════════════════════════
+function App(){const[lang,setLang]=useState("en");const[user,setUser]=useState(null);const[profile,setProfile]=useState(null);const[page,setPage]=useState("home");const[loading,setLoading]=useState(true);const[role,setRole]=useState("farmer");
+
+useEffect(()=>{sb.auth.getSession().then(({data:{session}})=>{if(session?.user){setUser(session.user);loadP(session.user.id)}else setLoading(false)});
+const{data:{subscription}}=sb.auth.onAuthStateChange((ev,s)=>{if(s?.user){setUser(s.user);loadP(s.user.id)}else{setUser(null);setProfile(null);setLoading(false)}});return()=>subscription.unsubscribe()},[]);
+const loadP=async uid=>{const{data}=await sb.from("profiles").select("*").eq("id",uid).single();setProfile(data);if(data?.role==="admin")setRole("admin");if(data?.language)setLang(data.language);setLoading(false)};
+const logout=async()=>{await sb.auth.signOut();setUser(null);setProfile(null);setPage("home");setRole("farmer")};
+
+if(loading)return<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}><div style={{fontSize:48}}>🌱</div><div style={{fontSize:16,fontWeight:700,color:C.ac,marginTop:8}}>SaplingSync</div></div>;
+if(!user)return<Auth lang={lang} onAuth={u=>{setUser(u);loadP(u.id)}}/>;
+
+const nav=[{k:"home",i:"🏠",l:lang==="ta"?"முகப்பு":"Home"},{k:"plants",i:"🌱",l:lang==="ta"?"தாவரங்கள்":"Plants"},{k:"pest",i:"🔬",l:lang==="ta"?"நோய்":"Disease"},{k:"notif",i:"🔔",l:lang==="ta"?"அறிவிப்பு":"Alerts"},{k:"comm",i:"👥",l:lang==="ta"?"சமூகம்":"Community"}];
+
+return<div style={{minHeight:"100vh",background:role==="admin"?"#f0f4f0":C.bg,fontFamily:"'Noto Sans','Noto Sans Tamil',system-ui,sans-serif",paddingBottom:role==="farmer"?72:20}}>
+<div style={{position:"sticky",top:0,zIndex:100,background:role==="admin"?"#1a2e1a":C.sf,borderBottom:`1px solid ${role==="admin"?"#2a4a2a":C.bdr}`,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:18}}>🌱</span><span style={{fontSize:15,fontWeight:800,color:role==="admin"?"#4ade80":C.ac}}>SaplingSync</span>{role==="admin"&&<span style={{fontSize:9,fontWeight:700,color:"#4ade80",background:"#22693e44",padding:"2px 6px",borderRadius:8}}>ADMIN</span>}</div>
+<div style={{display:"flex",alignItems:"center",gap:5}}>
+<button onClick={()=>{const nl=lang==="en"?"ta":"en";setLang(nl);if(profile)sb.from("profiles").update({language:nl}).eq("id",user.id)}} style={{padding:"4px 9px",borderRadius:16,border:`1.5px solid ${role==="admin"?"#4ade8044":C.ac+"44"}`,background:role==="admin"?"#22693e33":C.aL,color:role==="admin"?"#4ade80":C.ac,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{lang==="en"?"தமிழ்":"English"}</button>
+{profile?.role==="admin"&&role==="farmer"&&<button onClick={()=>{setRole("admin");setPage("admin")}} style={{padding:"4px 9px",borderRadius:16,background:"#1a2e1a",border:"1.5px solid #2a4a2a",color:"#4ade80",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⚙</button>}
+{role==="farmer"&&profile?.name&&<button onClick={()=>setPage("prof")} style={{padding:"4px 9px",borderRadius:16,background:C.aL,border:`1.5px solid ${C.ac}33`,color:C.ac,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✏️</button>}
+<button onClick={logout} style={{padding:"4px 9px",borderRadius:16,border:`1.5px solid ${C.dg}33`,background:C.dL,color:C.dg,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{lang==="ta"?"வெளியேறு":"Logout"}</button>
+</div></div>
+
+<div style={{padding:"14px 12px"}}>
+{role==="admin"&&<AdminDash lang={lang} onSwitch={()=>{setRole("farmer");setPage("home")}}/>}
+{role==="farmer"&&<>
+{page==="home"&&<Home lang={lang} profile={profile} onNav={setPage}/>}
+{page==="prof"&&<ProfileSetup lang={lang} user={user} profile={profile} onSave={()=>{loadP(user.id);setPage("home")}} onBack={()=>setPage("home")}/>}
+{page==="plants"&&<div style={{maxWidth:520,margin:"0 auto"}}><NewPlants lang={lang} user={user}/><div style={{marginTop:16}}><GrowthJournal lang={lang} user={user}/></div></div>}
+{page==="pest"&&<DiseaseCheck lang={lang} user={user}/>}
+{page==="news"&&<News lang={lang}/>}
+{page==="notif"&&<Notifs lang={lang} user={user}/>}
+{page==="comm"&&<Community lang={lang} user={user}/>}
+</>}
+</div>
+
+{role==="farmer"&&<div style={{position:"fixed",bottom:0,left:0,right:0,background:C.sf,borderTop:`1px solid ${C.bdr}`,display:"flex",justifyContent:"space-around",padding:"4px 0 7px",zIndex:100}}>
+{nav.map(n=><button key={n.k} onClick={()=>setPage(n.k)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,background:"none",border:"none",cursor:"pointer",padding:"2px 8px",color:page===n.k?C.ac:C.dm}}><span style={{fontSize:17}}>{n.i}</span><span style={{fontSize:9,fontWeight:600}}>{n.l}</span></button>)}
+</div>}
+</div>}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
