@@ -77,64 +77,39 @@ const WX={0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",51:"🌦️",61
 const WeatherCard=({lang,lat,lng})=>{const[d,setD]=useState(null);useEffect(()=>{if(!lat||!lng)return;fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia/Kolkata&forecast_days=7`).then(r=>r.json()).then(setD).catch(()=>{})},[lat,lng]);if(!d?.current)return null;const days=lang==="ta"?["ஞா","தி","செ","புத","வி","வெ","ச"]:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];return<Card style={{background:"linear-gradient(135deg,#1565c0,#0d47a1)",border:"none",color:"#fff"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><div><div style={{fontSize:32,fontWeight:800}}>{Math.round(d.current.temperature_2m)}°C</div><div style={{fontSize:12,opacity:.8}}>💧{d.current.relative_humidity_2m}% 💨{Math.round(d.current.wind_speed_10m)}km/h</div></div><div style={{fontSize:36}}>{wxI(d.current.weather_code)}</div></div>{d.daily&&<div style={{display:"flex",gap:3}}>{d.daily.time.map((dt,i)=><div key={i} style={{flex:1,textAlign:"center",background:"rgba(255,255,255,.12)",borderRadius:8,padding:"4px 2px"}}><div style={{fontSize:9,opacity:.7}}>{days[new Date(dt).getDay()]}</div><div style={{fontSize:14,margin:"2px 0"}}>{wxI(d.daily.weather_code[i])}</div><div style={{fontSize:9,fontWeight:700}}>{Math.round(d.daily.temperature_2m_max[i])}°/{Math.round(d.daily.temperature_2m_min[i])}°</div></div>)}</div>}</Card>};
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AUTH
+// AUTH (single-field: email, phone, or username + password — no OTP)
 // ═══════════════════════════════════════════════════════════════════════════
-const Auth=({lang,onAuth})=>{const[authType,setAuthType]=useState("email"); // "email" | "phone"
-const[mode,setMode]=useState("login");const[em,setEm]=useState("");const[pw,setPw]=useState("");
-const[phone,setPhone]=useState("");const[otp,setOtp]=useState("");const[otpSent,setOtpSent]=useState(false);
+const Auth=({lang,onAuth})=>{
+const[mode,setMode]=useState("login");
+const[id,setId]=useState("");const[pw,setPw]=useState("");
 const[busy,setBusy]=useState(false);const[err,setErr]=useState("");const[ok,setOk]=useState("");
 
-// Email login/signup
-const goEmail=async()=>{setBusy(true);setErr("");if(mode==="login"){const{data,error}=await sb.auth.signInWithPassword({email:em,password:pw});if(error){setErr(error.message);setBusy(false);return}onAuth(data.user)}else{const{error}=await sb.auth.signUp({email:em,password:pw});if(error){setErr(error.message);setBusy(false);return}setOk(lang==="ta"?"கணக்கு உருவாக்கப்பட்டது!":"Account created! Log in now.");setMode("login");setBusy(false)}};
+// Convert any identifier (email / phone / username) to a Supabase-friendly email
+const idToEmail=raw=>{const t=(raw||"").trim().toLowerCase();if(!t)return "";
+if(t.includes("@"))return t;
+const digits=t.replace(/\D/g,"");
+const stripped=t.replace(/[\s\-+]/g,"");
+const looksLikePhone=t.startsWith("+")||(digits.length>=7&&stripped===digits);
+if(looksLikePhone){let e164;if(t.startsWith("+"))e164=t.replace(/[\s\-]/g,"");else if(digits.length===10)e164="+91"+digits;else e164="+"+digits;return e164.replace("+","")+"@saplingsync.local"}
+return t.replace(/[^a-z0-9._-]/g,"")+"@saplingsync.local"};
 
-// Phone OTP - send
-const sendOtp=async()=>{setBusy(true);setErr("");
-const cleanPhone=phone.startsWith("+") ? phone : "+91"+phone.replace(/\D/g,"");
-const{error}=await sb.auth.signInWithOtp({phone:cleanPhone});
-if(error){setErr(error.message);setBusy(false);return}
-setOtpSent(true);setOk(lang==="ta"?"OTP அனுப்பப்பட்டது!":"OTP sent!");setBusy(false)};
+const go=async()=>{setBusy(true);setErr("");setOk("");
+const email=idToEmail(id);
+if(!email){setErr(lang==="ta"?"ஐடி தேவை":"Identifier required");setBusy(false);return}
+if(mode==="login"){const{data,error}=await sb.auth.signInWithPassword({email,password:pw});if(error){setErr(error.message);setBusy(false);return}onAuth(data.user)}
+else{const{error}=await sb.auth.signUp({email,password:pw});if(error){setErr(error.message);setBusy(false);return}setOk(lang==="ta"?"கணக்கு உருவாக்கப்பட்டது! உள்நுழையவும்.":"Account created! Log in now.");setMode("login");setBusy(false)}};
 
-// Phone OTP - verify
-const verifyOtp=async()=>{setBusy(true);setErr("");
-const cleanPhone=phone.startsWith("+") ? phone : "+91"+phone.replace(/\D/g,"");
-const{data,error}=await sb.auth.verifyOtp({phone:cleanPhone,token:otp,type:"sms"});
-if(error){setErr(error.message);setBusy(false);return}
-onAuth(data.user)};
-
-const tabStyle=(active)=>({flex:1,padding:"10px",border:"none",borderBottom:`2px solid ${active?C.ac:"transparent"}`,background:"transparent",color:active?C.ac:C.mu,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"});
-
-return<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{maxWidth:400,width:"100%"}}><div style={{textAlign:"center",marginBottom:32}}><div style={{fontSize:48,marginBottom:8}}>🌱</div><h1 style={{fontSize:24,fontWeight:800,color:C.ac}}>SaplingSync</h1><p style={{fontSize:13,color:C.mu,marginTop:4}}>{lang==="ta"?"100 நாற்றுகள். ஒரு இலக்கு.":"100 Saplings. One Mission."}</p></div>
+return<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{maxWidth:400,width:"100%"}}>
+<div style={{textAlign:"center",marginBottom:32}}><div style={{fontSize:48,marginBottom:8}}>🌱</div><h1 style={{fontSize:24,fontWeight:800,color:C.ac}}>SaplingSync</h1><p style={{fontSize:13,color:C.mu,marginTop:4}}>{lang==="ta"?"100 நாற்றுகள். ஒரு இலக்கு.":"100 Saplings. One Mission."}</p></div>
 <Card style={{padding:24}}>
-{/* Auth type tabs */}
-<div style={{display:"flex",borderBottom:`1px solid ${C.bdr}`,marginBottom:16}}>
-<button onClick={()=>{setAuthType("email");setErr("");setOk("")}} style={tabStyle(authType==="email")}>📧 {lang==="ta"?"மின்னஞ்சல்":"Email"}</button>
-<button onClick={()=>{setAuthType("phone");setErr("");setOk("")}} style={tabStyle(authType==="phone")}>📱 {lang==="ta"?"கைபேசி":"Phone"}</button>
-</div>
-
+<h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up")}</h3>
 {err&&<div style={{padding:10,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,marginBottom:12}}>{err}</div>}
 {ok&&<div style={{padding:10,background:C.aL,borderRadius:8,color:C.ac,fontSize:12,fontWeight:600,marginBottom:12}}>{ok}</div>}
-
-{/* EMAIL AUTH */}
-{authType==="email"&&<div>
-<h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up")}</h3>
-<Input label={lang==="ta"?"மின்னஞ்சல்":"Email"} value={em} onChange={setEm} placeholder="you@email.com" type="email"/>
+<Input label={lang==="ta"?"மின்னஞ்சல், கைபேசி அல்லது பயனர்பெயர்":"Email, phone, or username"} value={id} onChange={setId} placeholder={lang==="ta"?"you@email.com / +919884975488 / username":"you@email.com / +919884975488 / username"}/>
 <Input label={lang==="ta"?"கடவுச்சொல்":"Password"} value={pw} onChange={setPw} placeholder="••••••" type="password"/>
-<Btn onClick={goEmail} disabled={busy||!em||!pw}>{busy?(lang==="ta"?"ஏற்றுகிறது...":"Loading..."):(mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up"))}</Btn>
-<div style={{textAlign:"center",marginTop:12}}><button onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer"}}>{mode==="login"?(lang==="ta"?"கணக்கு இல்லையா?":"No account?"):(lang==="ta"?"கணக்கு உள்ளதா?":"Have account?")} <strong>{mode==="login"?(lang==="ta"?"பதிவு":"Sign Up"):(lang==="ta"?"உள்நுழை":"Log In")}</strong></button></div>
-</div>}
-
-{/* PHONE OTP AUTH */}
-{authType==="phone"&&<div>
-<h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{lang==="ta"?"கைபேசி OTP":"Phone OTP Login"}</h3>
-<Input label={lang==="ta"?"கைபேசி எண்":"Mobile Number"} value={phone} onChange={setPhone} placeholder="+91 98765 43210" type="tel"/>
-{!otpSent?<Btn onClick={sendOtp} disabled={busy||!phone}>{busy?(lang==="ta"?"அனுப்புகிறது...":"Sending..."):(lang==="ta"?"OTP அனுப்பு":"Send OTP")}</Btn>
-:<div>
-<Input label="OTP" value={otp} onChange={setOtp} placeholder="123456" type="number"/>
-<Btn onClick={verifyOtp} disabled={busy||!otp}>{busy?(lang==="ta"?"சரிபார்க்கிறது...":"Verifying..."):(lang==="ta"?"OTP சரிபார்":"Verify OTP")}</Btn>
-<div style={{textAlign:"center",marginTop:10}}><button onClick={()=>{setOtpSent(false);setOtp("");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.mu,fontSize:12,cursor:"pointer"}}>{lang==="ta"?"மீண்டும் OTP அனுப்பு":"Resend OTP"}</button></div>
-</div>}
-<div style={{padding:10,background:C.bL,borderRadius:8,fontSize:11,color:C.bl,marginTop:12,textAlign:"center"}}>{lang==="ta"?"சோதனை: +919999999901, OTP: 123456":"Test: +919999999901, OTP: 123456"}</div>
-</div>}
+<Btn onClick={go} disabled={busy||!id||!pw}>{busy?(lang==="ta"?"ஏற்றுகிறது...":"Loading..."):(mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up"))}</Btn>
+<div style={{textAlign:"center",marginTop:12}}><button onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{mode==="login"?(lang==="ta"?"கணக்கு இல்லையா?":"No account?"):(lang==="ta"?"கணக்கு உள்ளதா?":"Have account?")} <strong>{mode==="login"?(lang==="ta"?"பதிவு":"Sign Up"):(lang==="ta"?"உள்நுழை":"Log In")}</strong></button></div>
+<div style={{padding:10,background:C.alt,borderRadius:8,fontSize:11,color:C.mu,marginTop:12,textAlign:"center"}}>{lang==="ta"?"எந்த ஐடியும் கடவுச்சொல்லும் — OTP தேவையில்லை":"Any identifier + password — no OTP needed"}</div>
 </Card></div></div>};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -286,21 +261,65 @@ return<div><div style={{fontSize:15,fontWeight:700,marginBottom:12}}>📷 {lang=
 </div>};
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DISEASE CHECK (#5 — use Claude API via artifact context, or show pending)
+// DISEASE CHECK (#5 — History list as default; per-item AI diagnosis; wizard for new submissions appends to list)
 // ═══════════════════════════════════════════════════════════════════════════
-const DiseaseCheck=({lang,user})=>{const[step,setStep]=useState(0);
+const DiseaseCheck=({lang,user})=>{
+const[mode,setMode]=useState("list"); // "list" | "wizard"
+const[step,setStep]=useState(0);
 const[cropName,setCropName]=useState("");const[details,setDetails]=useState("");
 const[photo,setPhoto]=useState(null);const[photoFile,setPhotoFile]=useState(null);
-const[comment,setComment]=useState("");const[saved,setSaved]=useState(false);const[saving,setSaving]=useState(false);const fileRef=useRef();
+const[comment,setComment]=useState("");const[saving,setSaving]=useState(false);const[err,setErr]=useState("");
+const[history,setHistory]=useState([]);const[loadingHistory,setLoadingHistory]=useState(true);
+const[expId,setExpId]=useState(null);const[expRunning,setExpRunning]=useState(false);const[expErr,setExpErr]=useState("");
+const[confirmDelId,setConfirmDelId]=useState(null);const[deleting,setDeleting]=useState(false);const[delErr,setDelErr]=useState("");
+const fileRef=useRef();
+
+const loadHistory=async()=>{setLoadingHistory(true);
+const{data}=await sb.from("pest_checks").select("*").eq("farmer_id",user.id).order("created_at",{ascending:false});
+setHistory(data||[]);setLoadingHistory(false)};
+useEffect(()=>{loadHistory()},[]);
 
 const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setPhotoFile(f);const r=new FileReader();r.onload=ev=>{setPhoto(ev.target.result);setStep(2)};r.readAsDataURL(f)};
 
-const saveReport=async()=>{if(!cropName)return;setSaving(true);let photoUrl="";
-if(photoFile){const path=`${user.id}/pest/${Date.now()}.${photoFile.name.split(".").pop()}`;await sb.storage.from("photos").upload(path,photoFile);const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);photoUrl=publicUrl}
-await sb.from("pest_checks").insert({farmer_id:user.id,crop_type:cropName,photo_url:photoUrl,diagnosis:"Pending review",severity:"unknown",diagnosed_by:"pending",admin_notes:details+(comment?"\n---\nFarmer notes: "+comment:"")});
-setSaving(false);setSaved(true)};
+const startNew=()=>{setMode("wizard");setStep(0);setCropName("");setDetails("");setPhoto(null);setPhotoFile(null);setComment("");setErr("")};
+const cancelWizard=()=>{setMode("list");setStep(0);setCropName("");setDetails("");setPhoto(null);setPhotoFile(null);setComment("");setErr("")};
 
-return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:4}}>{lang==="ta"?"நோய் சோதனை":"Disease Check"}</h2>
+const saveReport=async()=>{if(!cropName||!photoFile)return;setSaving(true);setErr("");
+const path=`${user.id}/pest/${Date.now()}.${photoFile.name.split(".").pop()}`;
+const{error:upErr}=await sb.storage.from("photos").upload(path,photoFile);
+if(upErr){setErr("Upload failed: "+upErr.message);setSaving(false);return}
+const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);
+const fullDetails=details+(comment?"\n---\nFarmer notes: "+comment:"");
+const{error:insErr}=await sb.from("pest_checks").insert({farmer_id:user.id,crop_type:cropName,photo_url:publicUrl,diagnosis:"Pending review",severity:"unknown",diagnosed_by:"pending",admin_notes:fullDetails});
+if(insErr){setErr("Save failed: "+insErr.message);setSaving(false);return}
+setSaving(false);await loadHistory();cancelWizard()};
+
+const toggleExp=id=>{setExpErr("");setConfirmDelId(null);setDelErr("");setExpId(expId===id?null:id)};
+const runAi=async(item)=>{setExpRunning(true);setExpErr("");
+const{data,error:fnErr}=await sb.functions.invoke("diagnose-plant",{body:{photoUrl:item.photo_url,cropName:item.crop_type,details:item.admin_notes||"",lang,recordId:item.id}});
+if(fnErr||!data||data.error){setExpErr(lang==="ta"?"AI பரிசோதிக்க முடியவில்லை. மீண்டும் முயற்சி அல்லது நிர்வாகி பார்ப்பார்.":"AI couldn't diagnose. Try again or wait for admin review.");setExpRunning(false);return}
+setExpRunning(false);await loadHistory()};
+
+const doDelete=async(p)=>{setDeleting(true);setDelErr("");
+// Best-effort storage cleanup — extract path after /photos/ in the public URL
+try{const path=p.photo_url?.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(e){}
+const{error}=await sb.from("pest_checks").delete().eq("id",p.id);
+setDeleting(false);
+if(error){setDelErr(lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: "+error.message);return}
+setConfirmDelId(null);setExpId(null);await loadHistory()};
+
+const sevColor=s=>s==="high"?C.dg:s==="medium"?C.wr:s==="low"?C.ac:C.bl;
+const sevBg=s=>s==="high"?C.dL:s==="medium"?C.wL:s==="low"?C.aL:C.bL;
+const sevLabel=s=>{const m={high:lang==="ta"?"உயர்":"High",medium:lang==="ta"?"நடுத்தர":"Medium",low:lang==="ta"?"குறை":"Low",unknown:lang==="ta"?"—":"—"};return m[s]||s};
+const isAdminDx=p=>p.diagnosed_by==="admin";
+const isAiDx=p=>p.diagnosed_by&&p.diagnosed_by.startsWith("ai-haiku");
+const isPendingDx=p=>!p.diagnosed_by||p.diagnosed_by==="pending"||p.diagnosed_by==="ai-pending";
+
+// ── WIZARD MODE ──
+if(mode==="wizard"){
+return<div style={{maxWidth:520,margin:"0 auto"}}>
+<button onClick={cancelWizard} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:14,fontFamily:"inherit"}}>← {lang==="ta"?"பின்":"Back to history"}</button>
+<h2 style={{fontSize:20,fontWeight:800,marginBottom:4}}>{lang==="ta"?"புதிய நோய் சோதனை":"New Disease Check"}</h2>
 <Steps steps={[lang==="ta"?"விவரம்":"Details",lang==="ta"?"படம்":"Photo",lang==="ta"?"சேமி":"Submit"]} cur={step}/>
 
 {step===0&&<div>
@@ -316,8 +335,9 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 {step===1&&<div>
 <div style={{marginBottom:10,fontSize:13,color:C.mu}}>🌱 {cropName} {details?`— ${details.slice(0,50)}...`:""}</div>
 <div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.bdr}`,borderRadius:14,padding:"50px 24px",textAlign:"center",cursor:"pointer",background:C.alt}}>
-<div style={{fontSize:44,marginBottom:12}}>📸</div><div style={{fontSize:15,fontWeight:600}}>{lang==="ta"?"படம் எடுக்க தட்டு":"Tap to capture"}</div>
-<input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handlePhoto}/></div>
+<div style={{fontSize:44,marginBottom:12}}>📸</div><div style={{fontSize:15,fontWeight:600}}>{lang==="ta"?"படம் எடு அல்லது பதிவேற்று":"Capture or upload"}</div>
+<div style={{fontSize:11,color:C.mu,marginTop:6}}>{lang==="ta"?"கேமரா அல்லது கேலரியில் இருந்து":"Camera or photo gallery"}</div>
+<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/></div>
 </div>}
 
 {step===2&&<div style={{animation:"fadeIn .4s"}}>
@@ -326,15 +346,88 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 <div style={{fontSize:13,fontWeight:700,marginBottom:4}}>🌱 {cropName}</div>
 {details&&<div style={{fontSize:12,color:C.mu}}>{details}</div>}
 </Card>
-{!saved?<div>
-<Card style={{background:C.bL,borderLeft:`3px solid ${C.bl}`}}>
-<div style={{fontSize:14,fontWeight:700,color:C.bl,marginBottom:4}}>📤 {lang==="ta"?"படம் நிர்வாகிக்கு அனுப்பப்படும்":"Photo will be sent to admin for review"}</div>
-<div style={{fontSize:12,color:C.mu}}>{lang==="ta"?"நிர்வாகி நோயறிதல் + சிகிச்சை குறிப்புகள் வழங்குவார்":"Admin will provide diagnosis + treatment advice"}</div>
-</Card>
 <VInput lang={lang} label={lang==="ta"?"கூடுதல் குறிப்புகள்":"Additional notes"} value={comment} onChange={setComment} placeholder={lang==="ta"?"வேறு ஏதாவது?":"Anything else?"} multi/>
-<div style={{display:"flex",gap:10}}><Btn onClick={()=>{setPhoto(null);setPhotoFile(null);setStep(1)}} primary={false} style={{flex:1}}>🔄 {lang==="ta"?"மீண்டும்":"Retake"}</Btn><Btn onClick={saveReport} disabled={saving} style={{flex:1}}>📤 {saving?(lang==="ta"?"அனுப்புகிறது...":"Sending..."):(lang==="ta"?"அனுப்பு":"Submit")}</Btn></div>
-</div>:<Card style={{background:C.aL,textAlign:"center"}}><div style={{fontSize:20,fontWeight:700,color:C.ac,marginBottom:4}}>✅ {lang==="ta"?"சமர்ப்பிக்கப்பட்டது!":"Submitted!"}</div><div style={{fontSize:13,color:C.mu}}>{lang==="ta"?"நிர்வாகி விரைவில் பதிலளிப்பார். அறிவிப்புகளை சரிபார்க்கவும்.":"Admin will review shortly. Check notifications for updates."}</div></Card>}
+{err&&<div style={{padding:10,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,marginBottom:10}}>{err}</div>}
+<div style={{display:"flex",gap:10}}><Btn onClick={()=>{setPhoto(null);setPhotoFile(null);setStep(1)}} primary={false} style={{flex:1}}>🔄 {lang==="ta"?"மீண்டும்":"Retake"}</Btn><Btn onClick={saveReport} disabled={saving} style={{flex:1}}>📤 {saving?(lang==="ta"?"சேமிக்கிறது...":"Saving..."):(lang==="ta"?"சமர்ப்பி":"Submit")}</Btn></div>
 </div>}
+</div>}
+
+// ── LIST MODE ──
+return<div style={{maxWidth:520,margin:"0 auto"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+<h2 style={{fontSize:20,fontWeight:800}}>🔬 {lang==="ta"?"நோய் சோதனைகள்":"Disease Checks"}</h2>
+<button onClick={startNew} style={{padding:"8px 14px",background:C.ac,border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ {lang==="ta"?"புதிய":"New"}</button>
+</div>
+
+{loadingHistory&&<Card style={{textAlign:"center",color:C.mu,padding:30}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>}
+{!loadingHistory&&history.length===0&&<Card style={{textAlign:"center",padding:30}}>
+<div style={{fontSize:40,marginBottom:10}}>🌱</div>
+<div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{lang==="ta"?"இதுவரை சமர்ப்பிப்புகள் இல்லை":"No submissions yet"}</div>
+<div style={{fontSize:12,color:C.mu,marginBottom:14}}>{lang==="ta"?"உங்கள் தாவரத்தின் படத்தை எடுத்து புதிய சோதனை தொடங்கவும்":"Take a photo of your plant to start a new check"}</div>
+<Btn onClick={startNew}>📸 {lang==="ta"?"புதிய சோதனை":"New disease check"}</Btn>
+</Card>}
+
+{history.map(p=>{const expanded=expId===p.id;return<Card key={p.id} style={!expanded?{cursor:"pointer"}:{}} onClick={!expanded?()=>toggleExp(p.id):undefined}>
+<div style={{display:"flex",gap:10,alignItems:"center"}}>
+<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:14,fontWeight:700}}>{p.diagnosis||"Pending"}</div>
+<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · {p.created_at?.slice(0,10)}</div>
+<div style={{display:"flex",gap:6,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
+<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:sevBg(p.severity),color:sevColor(p.severity)}}>{sevLabel(p.severity)}</span>
+{isAdminDx(p)&&<span style={{fontSize:10,color:C.ac,fontWeight:700}}>👨‍🌾 {lang==="ta"?"நிர்வாகி":"Admin reviewed"}</span>}
+{isAiDx(p)&&!isAdminDx(p)&&<span style={{fontSize:10,color:C.bl,fontWeight:700}}>🤖 AI{p.diagnosed_by.includes("pending")?" + "+(lang==="ta"?"நிர்வாகி நிலுவை":"admin pending"):""}</span>}
+{isPendingDx(p)&&<span style={{fontSize:10,color:C.wr,fontWeight:700}}>⏳ {lang==="ta"?"நிலுவை":"Pending"}</span>}
+</div>
+</div>
+{!expanded&&<span style={{color:C.dm,fontSize:18}}>→</span>}
+</div>
+
+{expanded&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.bdr}`}}>
+<img src={p.photo_url} style={{width:"100%",maxHeight:280,objectFit:"cover",borderRadius:10,marginBottom:12}}/>
+
+{isPendingDx(p)?<>
+<Card style={{background:C.alt,marginBottom:12}}>
+<div style={{fontSize:11,fontWeight:700,color:C.mu,marginBottom:4}}>{lang==="ta"?"உங்கள் விவரம்":"Your description"}</div>
+<div style={{fontSize:13,color:C.tx,whiteSpace:"pre-wrap"}}>{p.admin_notes||"—"}</div>
+</Card>
+<Card style={{background:C.bL,borderLeft:`3px solid ${C.bl}`,marginBottom:12}}>
+<div style={{fontSize:13,fontWeight:700,color:C.bl,marginBottom:6}}>🤖 {lang==="ta"?"AI பரிசோதனை":"AI diagnosis"}</div>
+<div style={{fontSize:12,color:C.mu,marginBottom:10}}>{lang==="ta"?"உடனடி நோய் கண்டறிதலுக்கு AI ஐ இயக்கவும். கிடைக்கவில்லை என்றால் நிர்வாகி பார்ப்பார்.":"Run AI for an instant diagnosis. Admin will still review."}</div>
+{expErr&&<div style={{padding:10,background:C.wL,borderRadius:8,color:C.wr,fontSize:12,marginBottom:10,fontWeight:600}}>⚠️ {expErr}</div>}
+<Btn onClick={()=>runAi(p)} disabled={expRunning}>{expRunning?(lang==="ta"?"பரிசோதிக்கிறது...":"Analyzing..."):"🤖 "+(expErr?(lang==="ta"?"மீண்டும் முயற்சி":"Try again"):(lang==="ta"?"AI பரிசோதி":"Diagnose with AI"))}</Btn>
+</Card>
+</>:<>
+<Card style={{borderLeft:`4px solid ${sevColor(p.severity)}`,marginBottom:10}}>
+<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:6}}>
+<div style={{fontSize:18,fontWeight:800}}>{p.diagnosis}</div>
+<div style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6,background:sevBg(p.severity),color:sevColor(p.severity),flexShrink:0}}>{sevLabel(p.severity)}</div>
+</div>
+<div style={{fontSize:11,color:C.mu}}>{isAdminDx(p)?"👨‍🌾 "+(lang==="ta"?"நிர்வாகியால் சரிபார்க்கப்பட்டது":"Reviewed by admin"):"🤖 "+(lang==="ta"?"AI கண்டறிதல்":"AI diagnosis")}</div>
+</Card>
+{p.admin_notes&&<Card style={{background:isAdminDx(p)?C.aL:C.bL,marginBottom:10}}>
+<div style={{fontSize:13,fontWeight:700,color:isAdminDx(p)?C.ac:C.bl,marginBottom:6}}>{isAdminDx(p)?"👨‍🌾 "+(lang==="ta"?"நிர்வாகி குறிப்புகள்":"Admin notes"):"📝 "+(lang==="ta"?"AI குறிப்புகள்":"AI notes")}</div>
+<div style={{fontSize:13,color:C.tx,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{p.admin_notes}</div>
+</Card>}
+{isAiDx(p)&&!isAdminDx(p)&&p.diagnosed_by.includes("pending")&&<Card style={{background:C.wL,borderLeft:`3px solid ${C.wr}`,marginBottom:10}}>
+<div style={{fontSize:13,fontWeight:700,color:C.wr}}>👨‍🌾 {lang==="ta"?"நிர்வாகி உறுதிப்படுத்த உள்ளார்":"Awaiting admin confirmation"}</div>
+</Card>}
+</>}
+
+{confirmDelId===p.id?<div style={{padding:12,background:C.dL,borderRadius:10,marginTop:8,border:`1.5px solid ${C.dg}55`}}>
+<div style={{fontSize:13,fontWeight:700,color:C.dg,marginBottom:4,textAlign:"center"}}>🗑️ {lang==="ta"?"நிச்சயமாக நீக்கவா?":"Delete this submission?"}</div>
+<div style={{fontSize:11,color:C.mu,marginBottom:10,textAlign:"center"}}>{lang==="ta"?"இதை மீட்க முடியாது":"This cannot be undone"}</div>
+{delErr&&<div style={{padding:8,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,marginBottom:8,textAlign:"center"}}>{delErr}</div>}
+<div style={{display:"flex",gap:8}}>
+<button onClick={()=>{setConfirmDelId(null);setDelErr("")}} disabled={deleting} style={{flex:1,padding:10,background:"none",border:`1.5px solid ${C.bdr}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.tx,cursor:deleting?"default":"pointer",fontFamily:"inherit"}}>{lang==="ta"?"ரத்து":"Cancel"}</button>
+<button onClick={()=>doDelete(p)} disabled={deleting} style={{flex:1,padding:10,background:C.dg,border:"none",borderRadius:10,fontSize:13,fontWeight:700,color:"#fff",cursor:deleting?"default":"pointer",fontFamily:"inherit"}}>🗑️ {deleting?(lang==="ta"?"நீக்குகிறது...":"Deleting..."):(lang==="ta"?"ஆம், நீக்கு":"Yes, delete")}</button>
+</div>
+</div>:<div style={{display:"flex",gap:8,marginTop:8}}>
+<button onClick={()=>{setConfirmDelId(p.id);setDelErr("")}} style={{flex:1,padding:10,background:"none",border:`1.5px solid ${C.dg}55`,borderRadius:10,fontSize:13,fontWeight:600,color:C.dg,cursor:"pointer",fontFamily:"inherit"}}>🗑️ {lang==="ta"?"நீக்கு":"Delete"}</button>
+<button onClick={()=>toggleExp(null)} style={{flex:1,padding:10,background:"none",border:`1.5px solid ${C.bdr}`,borderRadius:10,fontSize:13,fontWeight:600,color:C.tx,cursor:"pointer",fontFamily:"inherit"}}>{lang==="ta"?"மூடு":"Close"}</button>
+</div>}
+</div>}
+</Card>})}
 </div>};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -386,7 +479,7 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 // ═══════════════════════════════════════════════════════════════════════════
 const Notifs=({lang,user})=>{const[items,setItems]=useState([]);const[loading,setLoading]=useState(true);
 useEffect(()=>{(async()=>{const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farmer_id",user.id).not("admin_rating","is",null).order("admin_review_date",{ascending:false}).limit(20);
-const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",user.id).not("admin_notes","is",null).order("created_at",{ascending:false}).limit(10);
+const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",user.id).neq("diagnosed_by","pending").order("created_at",{ascending:false}).limit(10);
 const all=[...(gu||[]).map(u=>({id:u.id,icon:"📝",text:`${u.plants?.name||"Plant"} M${u.month_number} — ${["","😟","😐","🙂","😊","🌟"][u.admin_rating]} ${u.admin_rating}/5`,sub:u.admin_comment,date:u.admin_review_date?.slice(0,10)||"",type:"review"})),
 ...(pc||[]).map(p=>({id:p.id,icon:"🔬",text:`${lang==="ta"?"நோய்":"Disease"}: ${p.diagnosis||"—"}`,sub:p.admin_notes,date:p.created_at?.slice(0,10)||"",type:"pest"}))].sort((a,b)=>b.date.localeCompare(a.date));
 setItems(all);setLoading(false)})()},[]);
@@ -402,6 +495,8 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 const AdminDash=({lang,onSwitch})=>{const[tab,setTab]=useState("farmers");const[farmers,setFarmers]=useState([]);const[pending,setPending]=useState([]);
 const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
 const[revId,setRevId]=useState(null);const[rating,setRating]=useState(0);const[comment,setComment]=useState("");const[loading,setLoading]=useState(true);
+const[selPestId,setSelPestId]=useState(null);const[pestEdit,setPestEdit]=useState({diagnosis:"",severity:"unknown",notes:""});
+const[pestRunning,setPestRunning]=useState(false);const[pestSaving,setPestSaving]=useState(false);const[pestErr,setPestErr]=useState("");const[aiResult,setAiResult]=useState(null);
 
 const load=async()=>{setLoading(true);const{data:f}=await sb.from("profiles").select("*").eq("role","farmer");setFarmers(f||[]);
 const{data:p}=await sb.from("growth_updates").select("*,plants(name,species),profiles!growth_updates_farmer_id_fkey(name,village,district)").is("admin_rating",null).order("created_at",{ascending:false});setPending(p||[]);setLoading(false)};
@@ -412,6 +507,20 @@ const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farm
 const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",f.id).order("created_at",{ascending:false});setFPests(pc||[])};
 
 const review=async()=>{if(!rating)return;const u=(await sb.auth.getUser()).data.user;await sb.from("growth_updates").update({admin_rating:rating,admin_comment:comment,admin_reviewer_id:u.id,admin_review_date:new Date().toISOString()}).eq("id",revId);setRevId(null);setRating(0);setComment("");load();if(selF)openFarmer(selF)};
+
+const openPest=p=>{setSelPestId(p.id);setPestEdit({diagnosis:p.diagnosis==="Pending review"||p.diagnosis==="Analyzing..."?"":(p.diagnosis||""),severity:p.severity||"unknown",notes:p.admin_notes||""});setAiResult(null);setPestErr("")};
+const closePest=()=>{setSelPestId(null);setAiResult(null);setPestErr("")};
+const runAiOnPest=async p=>{setPestRunning(true);setPestErr("");
+const{data,error:fnErr}=await sb.functions.invoke("diagnose-plant",{body:{photoUrl:p.photo_url,cropName:p.crop_type,details:p.admin_notes||"",lang}});
+if(fnErr||!data||data.error){setPestErr("AI diagnosis failed: "+(fnErr?.message||data?.error||"unknown error"));setPestRunning(false);return}
+setAiResult(data);
+setPestEdit({diagnosis:data.disease,severity:data.severity,notes:[`Treatment: ${data.treatment}`,`Prevention: ${data.prevention}`,data.retake_advice?`Retake: ${data.retake_advice}`:""].filter(Boolean).join("\n")});
+setPestRunning(false)};
+const savePestReview=async()=>{if(!selPestId)return;setPestSaving(true);
+await sb.from("pest_checks").update({diagnosis:pestEdit.diagnosis||"Reviewed",severity:pestEdit.severity,admin_notes:pestEdit.notes,diagnosed_by:"admin"}).eq("id",selPestId);
+setPestSaving(false);closePest();if(selF)openFarmer(selF)};
+const sevColorAdmin=s=>({high:C.dg,medium:C.wr,low:C.ac,unknown:C.bl})[s]||C.bl;
+const sevBgAdmin=s=>({high:C.dL,medium:C.wL,low:C.aL,unknown:C.bL})[s]||C.bL;
 
 if(loading)return<Card style={{textAlign:"center",padding:40,color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>;
 
@@ -445,7 +554,39 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 </Card>)}
 
 {fPests.length>0&&<><div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🔬 {lang==="ta"?"நோய் அறிக்கைகள்":"Disease Reports"} ({fPests.length})</div>
-{fPests.map(p=><Card key={p.id}><div style={{display:"flex",gap:10}}>{p.photo_url&&<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8}}/>}<div><div style={{fontSize:13,fontWeight:600}}>{p.diagnosis||"Pending"}</div><div style={{fontSize:12,color:C.mu}}>{p.crop_type} · {p.created_at?.slice(0,10)}</div>{p.admin_notes&&<div style={{fontSize:12,color:C.bl,marginTop:2}}>💬 {p.admin_notes}</div>}</div></div></Card>)}</>}
+{fPests.map(p=>{const expanded=selPestId===p.id;return<Card key={p.id} style={!expanded?{cursor:"pointer"}:{}} onClick={!expanded?()=>openPest(p):undefined}>
+<div style={{display:"flex",gap:10,alignItems:"center"}}>
+{p.photo_url&&<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
+<div style={{flex:1,minWidth:0}}>
+<div style={{fontSize:13,fontWeight:700}}>{p.diagnosis||"Pending"}</div>
+<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · {p.created_at?.slice(0,10)} · {p.diagnosed_by||"pending"}</div>
+<div style={{marginTop:4}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:sevBgAdmin(p.severity),color:sevColorAdmin(p.severity)}}>{p.severity||"unknown"}</span></div>
+</div>
+{!expanded&&<span style={{color:C.dm,fontSize:18}}>→</span>}
+</div>
+{expanded&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.bdr}`}}>
+{p.photo_url&&<img src={p.photo_url} style={{width:"100%",maxHeight:300,objectFit:"cover",borderRadius:10,marginBottom:10}}/>}
+{p.admin_notes&&<div style={{padding:10,background:C.alt,borderRadius:8,fontSize:12,marginBottom:10,whiteSpace:"pre-wrap",color:C.tx}}><div style={{fontSize:10,color:C.mu,fontWeight:700,marginBottom:4}}>{lang==="ta"?"முந்தைய குறிப்புகள்":"Existing notes / farmer description"}</div>{p.admin_notes}</div>}
+{!aiResult&&<div style={{marginBottom:12}}>
+<button onClick={()=>runAiOnPest(p)} disabled={pestRunning} style={{width:"100%",padding:12,background:pestRunning?C.alt:C.aL,border:`1.5px solid ${C.ac}55`,borderRadius:10,color:C.ac,fontSize:14,fontWeight:700,cursor:pestRunning?"default":"pointer",fontFamily:"inherit"}}>🤖 {pestRunning?(lang==="ta"?"AI பரிசோதிக்கிறது...":"AI analyzing..."):(lang==="ta"?"AI நோயறிதல் இயக்கு":"Run AI diagnosis")}</button>
+{pestErr&&<div style={{padding:10,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,marginTop:8}}>⚠️ {pestErr}</div>}
+</div>}
+{aiResult&&<Card style={{background:C.aL,marginBottom:12,padding:12}}>
+<div style={{fontSize:12,fontWeight:700,color:C.ac,marginBottom:6}}>🤖 {lang==="ta"?"AI பரிந்துரை":"AI suggestion"}: {aiResult.disease} ({Math.round(aiResult.confidence*100)}%)</div>
+{aiResult.treatment&&<div style={{fontSize:12,color:C.tx,whiteSpace:"pre-wrap",marginBottom:4}}><strong>Treatment:</strong> {aiResult.treatment}</div>}
+{aiResult.prevention&&<div style={{fontSize:12,color:C.tx,whiteSpace:"pre-wrap"}}><strong>Prevention:</strong> {aiResult.prevention}</div>}
+<div style={{fontSize:10,color:C.mu,marginTop:6,fontStyle:"italic"}}>{lang==="ta"?"கீழே திருத்தி, உறுதி செய்ய சேமி":"Edit below and save to confirm"}</div>
+</Card>}
+<Input label={lang==="ta"?"நோய் அறிதல்":"Diagnosis"} value={pestEdit.diagnosis} onChange={v=>setPestEdit({...pestEdit,diagnosis:v})} placeholder={lang==="ta"?"எ.கா. இலை கருகல்":"e.g. Leaf blight"}/>
+<div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:C.mu,marginBottom:6}}>{lang==="ta"?"தீவிரம்":"Severity"}</label>
+<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{["low","medium","high","unknown"].map(s=>{const sc=sevColorAdmin(s);const active=pestEdit.severity===s;return<button key={s} onClick={()=>setPestEdit({...pestEdit,severity:s})} style={{padding:"7px 14px",border:`1.5px solid ${active?sc:C.bdr}`,background:active?sevBgAdmin(s):"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:active?sc:C.tx}}>{s}</button>})}</div></div>
+<Input label={lang==="ta"?"நிர்வாக குறிப்புகள் / சிகிச்சை":"Admin notes / treatment advice"} value={pestEdit.notes} onChange={v=>setPestEdit({...pestEdit,notes:v})} placeholder={lang==="ta"?"சிகிச்சை, தடுப்பு...":"Treatment, prevention..."} multi/>
+<div style={{display:"flex",gap:8,marginTop:8}}>
+<Btn onClick={closePest} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Close"}</Btn>
+<Btn onClick={savePestReview} disabled={pestSaving} style={{flex:1}}>💾 {pestSaving?(lang==="ta"?"சேமிக்கிறது...":"Saving..."):(lang==="ta"?"சேமி":"Save review")}</Btn>
+</div>
+</div>}
+</Card>})}</>}
 </div>}
 
 // Main admin
