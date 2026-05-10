@@ -112,7 +112,7 @@ return<div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"
 <h3 style={{fontSize:16,fontWeight:700,textAlign:"center",marginBottom:14}}>{mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up")}</h3>
 {err&&<div style={{padding:10,background:C.dL,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,marginBottom:12}}>{err}</div>}
 {ok&&<div style={{padding:10,background:C.aL,borderRadius:8,color:C.ac,fontSize:12,fontWeight:600,marginBottom:12}}>{ok}</div>}
-<Input label={lang==="ta"?"பயனர்பெயர் (பயனர்பெயர், மின்னஞ்சல் அல்லது தொலைபேசி)":"Username (username, email, or phone)"} value={id} onChange={setId} placeholder=""/>
+<Input label={lang==="ta"?"பயனர்பெயர்":"Username"} value={id} onChange={setId} placeholder=""/>
 <Input label={lang==="ta"?"கடவுச்சொல்":"Password"} value={pw} onChange={setPw} placeholder="••••••" type="password"/>
 <Btn onClick={go} disabled={busy||!id||!pw}>{busy?(lang==="ta"?"ஏற்றுகிறது...":"Loading..."):(mode==="login"?(lang==="ta"?"உள்நுழை":"Log In"):(lang==="ta"?"பதிவு":"Sign Up"))}</Btn>
 <div style={{textAlign:"center",marginTop:12}}><button onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setOk("")}} style={{background:"none",border:"none",color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{mode==="login"?(lang==="ta"?"கணக்கு இல்லையா?":"No account?"):(lang==="ta"?"கணக்கு உள்ளதா?":"Have account?")} <strong>{mode==="login"?(lang==="ta"?"பதிவு":"Sign Up"):(lang==="ta"?"உள்நுழை":"Log In")}</strong></button></div>
