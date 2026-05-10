@@ -89,17 +89,21 @@ Diagnose this plant from the image.`;
         Deno.env.get("SUPABASE_ANON_KEY")!,
         { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
       );
+      // Preserve farmer's geo prefix `[📍lat,lng]` from existing admin_notes
+      const geoMatch = (details || "").match(/\[📍[-\d.,]+\]/);
+      const geoPrefix = geoMatch ? geoMatch[0] + " " : "";
+      const cleanFarmerNotes = (details || "").replace(/\[📍[-\d.,]+\]\s*/, "");
       const noteLines = [
         `Treatment: ${dx.treatment}`,
         `Prevention: ${dx.prevention}`,
       ];
       if (dx.retake_advice) noteLines.push(`Retake advice: ${dx.retake_advice}`);
-      if (details) noteLines.push(`---\nFarmer notes: ${details}`);
+      if (cleanFarmerNotes) noteLines.push(`---\nFarmer notes: ${cleanFarmerNotes}`);
       await sb.from("pest_checks").update({
         diagnosis: dx.disease,
         severity: dx.severity,
         diagnosed_by: escalate ? "ai-haiku-4.5+pending" : "ai-haiku-4.5",
-        admin_notes: noteLines.join("\n"),
+        admin_notes: geoPrefix + noteLines.join("\n"),
       }).eq("id", recordId);
     }
 
