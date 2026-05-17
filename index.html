@@ -768,6 +768,9 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 {items.map((n,i)=><Card key={i}><div style={{display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:20}}>{n.i}</span><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{n.t[lang]}</div><div style={{fontSize:11,color:C.dm,marginTop:2}}>{n.s} · 📅 {fmtDateTime(n.published)} · <span style={{color:C.ac,fontWeight:600}}>{fmtRel(n.published)}</span></div></div></div></Card>)}
 </div>};
 
+// DateTime clock
+const DateTimeClock=({lang})=>{const[now,setNow]=useState(new Date());useEffect(()=>{const t=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(t)},[]);const days=lang==="ta"?["ஞாயிறு","திங்கள்","செவ்வாய்","புதன்","வியாழன்","வெள்ளி","சனி"]:["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];return<div style={{textAlign:"center",marginBottom:12,padding:"10px 16px",background:C.sf,borderRadius:12,border:`1px solid ${C.bdr}`,boxShadow:C.sh}}><div style={{fontSize:26,fontWeight:800,color:C.ac,letterSpacing:1}}>{now.toLocaleTimeString(lang==="ta"?"ta-IN":"en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div><div style={{fontSize:12,color:C.mu,marginTop:2}}>{days[now.getDay()]} · {now.toLocaleDateString(lang==="ta"?"ta-IN":"en-IN",{year:"numeric",month:"long",day:"numeric"})}</div></div>};
+
 // Home
 const Home=({lang,profile,onNav})=>{return<div style={{maxWidth:520,margin:"0 auto"}}>
 <div style={{background:`linear-gradient(135deg,${C.ac},${C.aD})`,borderRadius:18,padding:22,marginBottom:16,color:"#fff"}}>
@@ -775,7 +778,7 @@ const Home=({lang,profile,onNav})=>{return<div style={{maxWidth:520,margin:"0 au
 <div style={{fontSize:13,opacity:.85}}>{lang==="ta"?"100 நாற்றுகள். ஒரு இலக்கு.":"100 Saplings. One Mission."}</div>
 {!profile?.name&&<button onClick={()=>onNav("prof")} style={{marginTop:12,padding:"9px 18px",background:"rgba(255,255,255,.25)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"சுயவிவரம் அமை":"Set Up Profile"}</button>}
 </div>
-{profile?.latitude&&<WeatherCard lang={lang} lat={profile.latitude} lng={profile.longitude}/>}
+<DateTimeClock lang={lang}/>{profile?.latitude&&<WeatherCard lang={lang} lat={profile.latitude} lng={profile.longitude}/>}
 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
 {[{i:"🌱",l:lang==="ta"?"புதிய தாவரங்கள்":"New Plants",n:"plants"},{i:"🔬",l:lang==="ta"?"நோய் சோதனை":"Disease Check",n:"pest"},{i:"📰",l:lang==="ta"?"செய்தி":"News",n:"news"},{i:"👥",l:lang==="ta"?"சமூகம்":"Community",n:"comm"}].map(a=><button key={a.n} onClick={()=>onNav(a.n)} style={{padding:"16px",borderRadius:14,border:`1.5px solid ${C.bdr}`,background:C.sf,cursor:"pointer",textAlign:"center",boxShadow:C.sh}}><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:13,fontWeight:600}}>{a.l}</div></button>)}
 </div>
