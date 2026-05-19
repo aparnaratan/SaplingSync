@@ -248,7 +248,7 @@ return<Card key={r.id}>
 // GROWTH JOURNAL (#2 — planting photos first, then quarterly with geotag)
 // ═══════════════════════════════════════════════════════════════════════════
 const GrowthJournal=({lang,user})=>{const[plants,setPlants]=useState([]);const[updates,setUpdates]=useState([]);const[sel,setSel]=useState(null);
-const[uploading,setUploading]=useState(false);const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();const cameraRef=useRef();
+const[uploading,setUploading]=useState(false);const[busy,setBusy]=useState("");const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();const cameraRef=useRef();
 const[allUpdates,setAllUpdates]=useState([]);const[lightbox,setLightbox]=useState(null);
 const[confirmDelUpd,setConfirmDelUpd]=useState(null);
 const emojis=["","😟","😐","🙂","😊","🌟"];
@@ -257,22 +257,24 @@ const loadAll=async()=>{const{data}=await sb.from("growth_updates").select("*,pl
 const loadU=async pid=>{const{data}=await sb.from("growth_updates").select("*").eq("plant_id",pid).order("month_number",{ascending:false});setUpdates(data||[])};
 useEffect(()=>{loadP();loadAll()},[]);useEffect(()=>{if(sel)loadU(sel.id)},[sel]);
 
-const handleUpload=async e=>{const file=e.target.files?.[0];if(!file){e.target.value="";return}
-e.target.value=""; // reset so picking the same file twice re-triggers
-// Get geotag from device (resolves to null if denied/timeout)
-const geo=await getGeoNow();
-const path=`${user.id}/${sel.id}/${Date.now()}.${file.name.split(".").pop()}`;
-const{error:upErr}=await sb.storage.from("photos").upload(path,file);
-if(upErr){alert((lang==="ta"?"படம் பதிவேற்ற முடியவில்லை: ":"Photo upload failed: ")+upErr.message);return}
-const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);
-const maxM=updates.length>0?Math.max(...updates.map(u=>u.month_number)):0;
-const geoNote=geo?`[📍${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}] ${notes}`:notes;
-const{error:insErr}=await sb.from("growth_updates").insert({plant_id:sel.id,farmer_id:user.id,month_number:maxM+1,photo_url:publicUrl,height_cm:height?parseInt(height):null,notes:geoNote});
-if(insErr){
-// roll back the orphan storage file
-try{await sb.storage.from("photos").remove([path])}catch(_){}
-alert((lang==="ta"?"சேமிக்க முடியவில்லை: ":"Save failed: ")+insErr.message);return}
-setHeight("");setNotes("");setUploading(false);loadU(sel.id);loadAll()};
+const handleUpload=async e=>{const file=e.target.files?.[0];e.target.value="";if(!file){return}
+try{
+  setBusy(lang==="ta"?"இடம் பெறுகிறது...":"Getting location...");
+  // GPS with a hard 4s cap — if the browser hangs, we just skip geo
+  const geo=await Promise.race([getGeoNow(),new Promise(res=>setTimeout(()=>res(null),4000))]);
+  setBusy(lang==="ta"?"படம் பதிவேற்றுகிறது...":"Uploading photo...");
+  const path=`${user.id}/${sel.id}/${Date.now()}.${(file.name.split(".").pop()||"jpg")}`;
+  const{error:upErr}=await sb.storage.from("photos").upload(path,file);
+  if(upErr){setBusy("");alert((lang==="ta"?"படம் பதிவேற்ற முடியவில்லை: ":"Photo upload failed: ")+upErr.message);return}
+  const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);
+  setBusy(lang==="ta"?"சேமிக்கிறது...":"Saving record...");
+  const maxM=updates.length>0?Math.max(...updates.map(u=>u.month_number)):0;
+  const geoNote=geo?`[📍${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}] ${notes}`:notes;
+  const{error:insErr}=await sb.from("growth_updates").insert({plant_id:sel.id,farmer_id:user.id,month_number:maxM+1,photo_url:publicUrl,height_cm:height?parseInt(height):null,notes:geoNote});
+  if(insErr){try{await sb.storage.from("photos").remove([path])}catch(_){}
+    setBusy("");alert((lang==="ta"?"சேமிக்க முடியவில்லை: ":"Save failed: ")+insErr.message);return}
+  setBusy("");setHeight("");setNotes("");setUploading(false);loadU(sel.id);loadAll();
+}catch(err){setBusy("");alert((lang==="ta"?"எதிர்பாராத பிழை: ":"Unexpected error: ")+(err?.message||err))}};
 
 const deleteUpdate=async u=>{
 try{const path=u.photo_url?.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(e){}
@@ -291,7 +293,8 @@ if(sel)return<div>
 <Card style={{background:C.wL,border:"none",padding:12,marginBottom:8}}><div style={{fontSize:12,color:C.wr,lineHeight:1.5}}>{lang==="ta"?"📏 20-30செமீ தொலைவில் · ☀️ இயற்கை ஒளி · 🎯 தாவரத்தை மையமாக வை · 📍 இடம் தானாக பதிவாகும்":"📏 Hold 20-30cm away · ☀️ Natural light · 🎯 Center the plant · 📍 Location auto-recorded"}</div></Card>
 <VInput lang={lang} label={lang==="ta"?"உயரம் (செமீ)":"Height (cm)"} value={height} onChange={setHeight} placeholder="45" type="number"/>
 <VInput lang={lang} label={lang==="ta"?"குறிப்புகள்":"Notes"} value={notes} onChange={setNotes} placeholder={lang==="ta"?"எப்படி வளர்கிறது?":"How is it growing?"}/>
-<div style={{display:"flex",gap:8}}><Btn onClick={()=>setUploading(false)} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>cameraRef.current?.click()} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn><Btn onClick={()=>fileRef.current?.click()} primary={false} style={{flex:1}}>🖼️ {lang==="ta"?"பதிவேற்று":"Upload"}</Btn></div>
+{busy&&<div style={{padding:12,background:C.bL,borderRadius:10,marginBottom:10,textAlign:"center",fontSize:13,fontWeight:600,color:C.bl}}>⏳ {busy}</div>}
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>{setUploading(false);setBusy("")}} primary={false} disabled={!!busy} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>cameraRef.current?.click()} disabled={!!busy} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn><Btn onClick={()=>fileRef.current?.click()} primary={false} disabled={!!busy} style={{flex:1}}>🖼️ {lang==="ta"?"பதிவேற்று":"Upload"}</Btn></div>
 <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
 <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleUpload}/>
 </Card>}
