@@ -200,8 +200,10 @@ await sb.from("plants").update({name:newName,species:editSpecies}).eq("farmer_id
 setEditSaving(false);cancelEdit();load()};
 const doDelete=async r=>{
 const name=`${PLANTS5.find(c=>c.id===r.species)?.[lang]||r.species} (${r.quantity})`;
-await sb.from("plant_requests").delete().eq("id",r.id);
-await sb.from("plants").delete().eq("farmer_id",user.id).eq("name",name);
+const{error:rErr}=await sb.from("plant_requests").delete().eq("id",r.id);
+if(rErr){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+rErr.message);return}
+const{error:pErr}=await sb.from("plants").delete().eq("farmer_id",user.id).eq("name",name);
+if(pErr){console.warn("Linked plant not deleted:",pErr.message)}
 setConfirmDel(null);load()};
 return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"புதிய தாவரங்கள் கோரு":"Request New Plants"}</h2>
 {justAdded&&<Card style={{background:C.aL,textAlign:"center",animation:"fadeIn .4s"}}><div style={{fontSize:16,fontWeight:700,color:C.ac}}>✅ {lang==="ta"?"கோரிக்கை முடிந்தது!":"Request Complete!"}</div><div style={{fontSize:12,color:C.mu,marginTop:4}}>{lang==="ta"?"உங்கள் நாற்றுகள் விரைவில் வழங்கப்படும்":"Your saplings will be delivered soon"}</div></Card>}
@@ -250,7 +252,7 @@ return<Card key={r.id}>
 const GrowthJournal=({lang,user})=>{const[plants,setPlants]=useState([]);const[updates,setUpdates]=useState([]);const[sel,setSel]=useState(null);
 const[uploading,setUploading]=useState(false);const[busy,setBusy]=useState("");const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();const cameraRef=useRef();
 const[allUpdates,setAllUpdates]=useState([]);const[lightbox,setLightbox]=useState(null);
-const[confirmDelUpd,setConfirmDelUpd]=useState(null);
+const[confirmDelUpd,setConfirmDelUpd]=useState(null);const[confirmDelPlant,setConfirmDelPlant]=useState(null);
 const emojis=["","😟","😐","🙂","😊","🌟"];
 const loadP=async()=>{const{data}=await sb.from("plants").select("*").eq("farmer_id",user.id);setPlants(data||[])};
 const loadAll=async()=>{const{data}=await sb.from("growth_updates").select("*,plants(name,species)").eq("farmer_id",user.id).order("created_at",{ascending:false});setAllUpdates(data||[])};
@@ -282,6 +284,16 @@ const{error,count}=await sb.from("growth_updates").delete({count:"exact"}).eq("i
 if(error){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+error.message);return}
 if(count===0){alert(lang==="ta"?"நீக்க அனுமதி இல்லை (RLS)":"No permission to delete (RLS)");return}
 setConfirmDelUpd(null);if(sel)loadU(sel.id);loadAll()};
+
+const deletePlant=async pl=>{
+// best-effort: remove all growth updates + their storage files for this plant
+const{data:related}=await sb.from("growth_updates").select("id,photo_url").eq("plant_id",pl.id);
+for(const u of (related||[])){try{const p=u.photo_url?.split("/photos/")[1];if(p)await sb.storage.from("photos").remove([p])}catch(_){}}
+if(related?.length){await sb.from("growth_updates").delete().eq("plant_id",pl.id)}
+const{error,count}=await sb.from("plants").delete({count:"exact"}).eq("id",pl.id);
+if(error){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+error.message);return}
+if(count===0){alert(lang==="ta"?"நீக்க அனுமதி இல்லை (RLS)":"No permission to delete (RLS)");return}
+setConfirmDelPlant(null);loadP();loadAll()};
 
 if(sel)return<div>
 <button onClick={()=>{setSel(null);setUpdates([])}} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:12,fontFamily:"inherit"}}>← {lang==="ta"?"அனைத்து":"All plants"}</button>
@@ -334,9 +346,22 @@ return<div><div style={{fontSize:15,fontWeight:700,marginBottom:12}}>📷 {lang=
 </div>})}
 </div></Card>}
 {plants.length===0&&<Card style={{textAlign:"center",padding:20,color:C.dm,fontSize:13}}>{lang==="ta"?"முதலில் தாவரம் கோரிக்கை சேர்":"Request plants first"}</Card>}
-{plants.map(pl=>{const c=allUpdates.filter(u=>u.plant_id===pl.id).length;return<Card key={pl.id} style={{cursor:"pointer"}} onClick={()=>setSel(pl)}>
-<div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:44,height:44,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||ALLCROPS.find(c=>c.id===pl.species)?.icon||"🌿"}</div>
-<div style={{flex:1}}><div style={{fontSize:15,fontWeight:700}}>{pl.name}</div><div style={{fontSize:12,color:C.mu}}>{c} {lang==="ta"?"படங்கள்":"photos"} · {lang==="ta"?"தட்டி பார்":"Tap to view"}</div></div><span style={{color:C.dm}}>→</span></div>
+{plants.map(pl=>{const c=allUpdates.filter(u=>u.plant_id===pl.id).length;const confirming=confirmDelPlant===pl.id;return<Card key={pl.id}>
+<div style={{display:"flex",gap:12,alignItems:"center"}}>
+<div onClick={()=>!confirming&&setSel(pl)} style={{display:"flex",gap:12,alignItems:"center",flex:1,cursor:confirming?"default":"pointer"}}>
+<div style={{width:44,height:44,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||ALLCROPS.find(c=>c.id===pl.species)?.icon||"🌿"}</div>
+<div style={{flex:1}}><div style={{fontSize:15,fontWeight:700}}>{pl.name}</div><div style={{fontSize:12,color:C.mu}}>{c} {lang==="ta"?"படங்கள்":"photos"} · {lang==="ta"?"தட்டி பார்":"Tap to view"}</div></div>
+{!confirming&&<span style={{color:C.dm}}>→</span>}
+</div>
+{!confirming&&<button onClick={e=>{e.stopPropagation();setConfirmDelPlant(pl.id)}} style={{background:"none",border:"none",color:C.dg,fontSize:16,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"}} title={lang==="ta"?"தாவரத்தை நீக்கு":"Delete plant"}>🗑️</button>}
+</div>
+{confirming&&<div style={{marginTop:10,padding:10,background:C.dL,borderRadius:8,border:`1.5px solid ${C.dg}55`}}>
+<div style={{fontSize:12,fontWeight:700,color:C.dg,textAlign:"center",marginBottom:6}}>{lang==="ta"?`${pl.name} மற்றும் ${c} படங்களை நீக்கவா?`:`Delete ${pl.name} and its ${c} photos?`}</div>
+<div style={{display:"flex",gap:8}}>
+<button onClick={()=>setConfirmDelPlant(null)} style={{flex:1,padding:8,background:"none",border:`1.5px solid ${C.bdr}`,borderRadius:8,fontSize:12,fontWeight:600,color:C.tx,cursor:"pointer",fontFamily:"inherit"}}>{lang==="ta"?"ரத்து":"Cancel"}</button>
+<button onClick={()=>deletePlant(pl)} style={{flex:1,padding:8,background:C.dg,border:"none",borderRadius:8,fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>🗑️ {lang==="ta"?"நீக்கு":"Delete"}</button>
+</div>
+</div>}
 </Card>})}
 {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,cursor:"pointer"}}><img src={lightbox} style={{maxWidth:"100%",maxHeight:"100%",borderRadius:8}}/></div>}
 </div>};
