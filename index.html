@@ -248,7 +248,7 @@ return<Card key={r.id}>
 // GROWTH JOURNAL (#2 — planting photos first, then quarterly with geotag)
 // ═══════════════════════════════════════════════════════════════════════════
 const GrowthJournal=({lang,user})=>{const[plants,setPlants]=useState([]);const[updates,setUpdates]=useState([]);const[sel,setSel]=useState(null);
-const[uploading,setUploading]=useState(false);const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();
+const[uploading,setUploading]=useState(false);const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();const cameraRef=useRef();
 const[allUpdates,setAllUpdates]=useState([]);const[lightbox,setLightbox]=useState(null);
 const[confirmDelUpd,setConfirmDelUpd]=useState(null);
 const emojis=["","😟","😐","🙂","😊","🌟"];
@@ -286,8 +286,9 @@ if(sel)return<div>
 <Card style={{background:C.wL,border:"none",padding:12,marginBottom:8}}><div style={{fontSize:12,color:C.wr,lineHeight:1.5}}>{lang==="ta"?"📏 20-30செமீ தொலைவில் · ☀️ இயற்கை ஒளி · 🎯 தாவரத்தை மையமாக வை · 📍 இடம் தானாக பதிவாகும்":"📏 Hold 20-30cm away · ☀️ Natural light · 🎯 Center the plant · 📍 Location auto-recorded"}</div></Card>
 <VInput lang={lang} label={lang==="ta"?"உயரம் (செமீ)":"Height (cm)"} value={height} onChange={setHeight} placeholder="45" type="number"/>
 <VInput lang={lang} label={lang==="ta"?"குறிப்புகள்":"Notes"} value={notes} onChange={setNotes} placeholder={lang==="ta"?"எப்படி வளர்கிறது?":"How is it growing?"}/>
-<div style={{display:"flex",gap:8}}><Btn onClick={()=>setUploading(false)} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>fileRef.current?.click()} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn></div>
-<input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setUploading(false)} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>cameraRef.current?.click()} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn><Btn onClick={()=>fileRef.current?.click()} primary={false} style={{flex:1}}>🖼️ {lang==="ta"?"பதிவேற்று":"Upload"}</Btn></div>
+<input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
+<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleUpload}/>
 </Card>}
 
 {updates.length===0&&<Card style={{textAlign:"center",padding:24}}><div style={{fontSize:32,marginBottom:8}}>📷</div><div style={{fontSize:13,color:C.dm}}>{lang==="ta"?"நடவு படம் பதிவேற்றி நிர்வாகி ஒப்புதல் பெறுங்கள்":"Upload planting photo for admin approval"}</div></Card>}
