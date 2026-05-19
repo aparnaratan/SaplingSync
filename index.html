@@ -257,16 +257,21 @@ const loadAll=async()=>{const{data}=await sb.from("growth_updates").select("*,pl
 const loadU=async pid=>{const{data}=await sb.from("growth_updates").select("*").eq("plant_id",pid).order("month_number",{ascending:false});setUpdates(data||[])};
 useEffect(()=>{loadP();loadAll()},[]);useEffect(()=>{if(sel)loadU(sel.id)},[sel]);
 
-const handleUpload=async e=>{const file=e.target.files?.[0];if(!file)return;
-// Get geotag from device
+const handleUpload=async e=>{const file=e.target.files?.[0];if(!file){e.target.value="";return}
+e.target.value=""; // reset so picking the same file twice re-triggers
+// Get geotag from device (resolves to null if denied/timeout)
 const geo=await getGeoNow();
 const path=`${user.id}/${sel.id}/${Date.now()}.${file.name.split(".").pop()}`;
-const{error:upErr}=await sb.storage.from("photos").upload(path,file);if(upErr){alert("Upload failed: "+upErr.message);return}
+const{error:upErr}=await sb.storage.from("photos").upload(path,file);
+if(upErr){alert((lang==="ta"?"படம் பதிவேற்ற முடியவில்லை: ":"Photo upload failed: ")+upErr.message);return}
 const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);
 const maxM=updates.length>0?Math.max(...updates.map(u=>u.month_number)):0;
-// Store geotag in notes for admin verification
 const geoNote=geo?`[📍${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}] ${notes}`:notes;
-await sb.from("growth_updates").insert({plant_id:sel.id,farmer_id:user.id,month_number:maxM+1,photo_url:publicUrl,height_cm:height?parseInt(height):null,notes:geoNote});
+const{error:insErr}=await sb.from("growth_updates").insert({plant_id:sel.id,farmer_id:user.id,month_number:maxM+1,photo_url:publicUrl,height_cm:height?parseInt(height):null,notes:geoNote});
+if(insErr){
+// roll back the orphan storage file
+try{await sb.storage.from("photos").remove([path])}catch(_){}
+alert((lang==="ta"?"சேமிக்க முடியவில்லை: ":"Save failed: ")+insErr.message);return}
 setHeight("");setNotes("");setUploading(false);loadU(sel.id);loadAll()};
 
 const deleteUpdate=async u=>{
