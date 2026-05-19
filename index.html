@@ -271,7 +271,9 @@ setHeight("");setNotes("");setUploading(false);loadU(sel.id);loadAll()};
 
 const deleteUpdate=async u=>{
 try{const path=u.photo_url?.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(e){}
-await sb.from("growth_updates").delete().eq("id",u.id);
+const{error,count}=await sb.from("growth_updates").delete({count:"exact"}).eq("id",u.id);
+if(error){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+error.message);return}
+if(count===0){alert(lang==="ta"?"நீக்க அனுமதி இல்லை (RLS)":"No permission to delete (RLS)");return}
 setConfirmDelUpd(null);if(sel)loadU(sel.id);loadAll()};
 
 if(sel)return<div>
@@ -541,9 +543,11 @@ const deletePost=async(p)=>{
 await sb.from("community_replies").delete().eq("post_id",p.id);
 await sb.from("community_likes").delete().eq("post_id",p.id);
 try{const path=p.photo_url?.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(e){}
-await sb.from("community_posts").delete().eq("id",p.id);
+const{error,count}=await sb.from("community_posts").delete({count:"exact"}).eq("id",p.id);
+if(error){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+error.message);return}
+if(count===0){alert(lang==="ta"?"நீக்க அனுமதி இல்லை (RLS)":"No permission to delete (RLS)");return}
 setConfirmDelPost(null);load()};
-const deleteReply=async(r)=>{await sb.from("community_replies").delete().eq("id",r.id);setConfirmDelReply(null);load()};
+const deleteReply=async(r)=>{const{error,count}=await sb.from("community_replies").delete({count:"exact"}).eq("id",r.id);if(error){alert((lang==="ta"?"நீக்க முடியவில்லை: ":"Delete failed: ")+error.message);return}if(count===0){alert(lang==="ta"?"நீக்க அனுமதி இல்லை (RLS)":"No permission to delete (RLS)");return}setConfirmDelReply(null);load()};
 const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setNpFile(f);const r=new FileReader();r.onload=ev=>setNpPhoto(ev.target.result);r.readAsDataURL(f)};
 
 const renderReply=(r,postId,depth)=>{const{text}=parseReplyParent(r.content);const myReply=r.author_id===user.id;const childReplies=(replies[postId]||[]).filter(x=>parseReplyParent(x.content).parent===r.id);const showReplyForm=replyTo&&replyTo.postId===postId&&replyTo.parentReplyId===r.id;
