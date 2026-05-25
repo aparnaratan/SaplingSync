@@ -202,7 +202,6 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><Back onClick={onBack} lang={l
 // NEW PLANT REQUESTS (#2 — 5 types only, status flow)
 // ═══════════════════════════════════════════════════════════════════════════
 const NewPlants=({lang,user})=>{const[sel,setSel]=useState(null);const[count,setCount]=useState("");const[reqs,setReqs]=useState([]);const[loading,setLoading]=useState(true);const[justAdded,setJustAdded]=useState(false);
-const[editId,setEditId]=useState(null);const[editSpecies,setEditSpecies]=useState("");const[editQty,setEditQty]=useState("");const[editSaving,setEditSaving]=useState(false);
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
 const load=async()=>{const{data}=await sb.from("plant_requests").select("*").eq("farmer_id",user.id).order("created_at",{ascending:false});setReqs(data||[]);setLoading(false)};
 useEffect(()=>{load()},[]);
@@ -210,15 +209,6 @@ const add=async()=>{if(!sel||!count)return;await sb.from("plant_requests").inser
 // Also create a plant entry for the journal
 await sb.from("plants").insert({farmer_id:user.id,name:`${sel[lang]} (${count})`,species:sel.id,status:"healthy",growth_stage:"seedling",plant_type:"sapling"});
 setSel(null);setCount("");setJustAdded(true);setTimeout(()=>setJustAdded(false),3000);load()};
-const startEdit=r=>{setEditId(r.id);setEditSpecies(r.species);setEditQty(String(r.quantity||""))};
-const cancelEdit=()=>{setEditId(null);setEditSpecies("");setEditQty("")};
-const saveEdit=async r=>{if(!editSpecies||!editQty)return;setEditSaving(true);
-const oldName=`${PLANTS5.find(c=>c.id===r.species)?.[lang]||r.species} (${r.quantity})`;
-const newSp=PLANTS5.find(c=>c.id===editSpecies);const newName=`${newSp?.[lang]||editSpecies} (${editQty})`;
-await sb.from("plant_requests").update({species:editSpecies,quantity:parseInt(editQty)}).eq("id",r.id);
-// Best-effort: update the matching plant entry created at request time
-await sb.from("plants").update({name:newName,species:editSpecies}).eq("farmer_id",user.id).eq("name",oldName);
-setEditSaving(false);cancelEdit();load()};
 const startDeleteRequest=r=>undoDel(r.id,lang==="ta"?"கோரிக்கை நீக்கப்பட்டது":"Request deleted",async()=>{
 const name=`${PLANTS5.find(c=>c.id===r.species)?.[lang]||r.species} (${r.quantity})`;
 const{error}=await sb.from("plant_requests").delete().eq("id",r.id);
@@ -236,26 +226,14 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 <Btn onClick={add}>🌱 {lang==="ta"?"கோரிக்கை சேர்":"Request"} — {sel.icon} {sel[lang]}</Btn></div>}
 </Card>
 {reqs.length>0&&<div style={{fontSize:15,fontWeight:700,marginTop:16,marginBottom:10}}>{lang==="ta"?"என் கோரிக்கைகள்":"My Requests"}</div>}
-{reqs.filter(r=>!isHidden(r.id)).map(r=>{const cr=PLANTS5.find(c=>c.id===r.species);const editable=(r.status||"requested")==="requested";const isEditing=editId===r.id;
+{reqs.filter(r=>!isHidden(r.id)).map(r=>{const cr=PLANTS5.find(c=>c.id===r.species);
 return<Card key={r.id}>
-{!isEditing&&<div style={{display:"flex",alignItems:"center",gap:12}}>
+<div style={{display:"flex",alignItems:"center",gap:12}}>
 <div style={{width:40,height:40,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{cr?.icon||"🌱"}</div>
 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{cr?.[lang]||r.species}</div><div style={{fontSize:12,color:C.mu}}>{r.quantity} {lang==="ta"?"தாவரங்கள்":"plants"}</div></div>
 <Pill label={r.status==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):r.status==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):(lang==="ta"?"கோரப்பட்டது":"Requested")} color={r.status==="delivered"?C.ac:r.status==="approved"?C.bl:C.wr} bg={r.status==="delivered"?C.aL:r.status==="approved"?C.bL:C.wL}/>
-</div>}
-{isEditing&&<div style={{background:C.aL,padding:12,borderRadius:10}}>
-<div style={{fontSize:13,fontWeight:700,color:C.aD,marginBottom:8}}>✏️ {lang==="ta"?"கோரிக்கை திருத்து":"Edit request"}</div>
-<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:10}}>
-{PLANTS5.map(c=><button key={c.id} onClick={()=>setEditSpecies(c.id)} style={{padding:"8px 2px",borderRadius:10,border:`2px solid ${editSpecies===c.id?C.ac:C.bdr}`,background:editSpecies===c.id?C.sf:"transparent",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22}}>{c.icon}</div><div style={{fontSize:9,fontWeight:600,color:editSpecies===c.id?C.aD:C.dm}}>{c[lang]}</div></button>)}
 </div>
-<Input label={lang==="ta"?"எத்தனை?":"How many?"} value={editQty} onChange={setEditQty} placeholder="100" type="number"/>
-<div style={{display:"flex",gap:8}}><Btn onClick={cancelEdit} primary={false} style={{flex:1}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn><Btn onClick={()=>saveEdit(r)} disabled={editSaving} style={{flex:1}}>{editSaving?(lang==="ta"?"சேமிக்கிறது...":"Saving..."):"💾 "+(lang==="ta"?"சேமி":"Save")}</Btn></div>
-</div>}
-{!isEditing&&<div style={{display:"flex",gap:8,marginTop:10}}>
-{editable&&<button onClick={()=>startEdit(r)} style={{flex:1,padding:9,background:"none",border:`1.5px solid ${C.bl}55`,borderRadius:8,color:C.bl,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✏️ {lang==="ta"?"திருத்து":"Edit"}</button>}
-<button onClick={()=>startDeleteRequest(r)} style={{flex:1,padding:9,background:"none",border:`1.5px solid ${C.dg}55`,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ {lang==="ta"?"நீக்கு":"Delete"}</button>
-</div>}
-{!isEditing&&!editable&&<div style={{fontSize:10,color:C.dm,textAlign:"center",marginTop:6,fontStyle:"italic"}}>{lang==="ta"?"அங்கீகரிக்கப்பட்ட பிறகு திருத்த முடியாது":"Cannot edit after approval"}</div>}
+<button onClick={()=>startDeleteRequest(r)} style={{width:"100%",marginTop:10,padding:9,background:"none",border:`1.5px solid ${C.dg}55`,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ {lang==="ta"?"நீக்கு":"Delete"}</button>
 </Card>})}
 {Toast}
 </div>};
@@ -324,7 +302,7 @@ if(sel)return<div>
 {updates.filter(u=>!isHidden(u.id)).map(u=>{const geo=parseGeo(u.notes);return<Card key={u.id}>
 <div style={{display:"flex",gap:12}}>
 {u.photo_url&&<img src={u.photo_url} onClick={()=>setLightbox(u.photo_url)} style={{width:80,height:80,objectFit:"cover",borderRadius:10,flexShrink:0,cursor:"pointer"}}/>}
-<div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{fontSize:14,fontWeight:700}}>{u.month_number===1?(lang==="ta"?"நடவு":"Planting"):`${lang==="ta"?"மாதம்":"Month"} ${u.month_number}`}</span><span style={{fontSize:11,color:C.dm}}>📅 {fmtDate(u.created_at)}</span></div>
+<div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{fontSize:14,fontWeight:700}}>{u.month_number===1?(lang==="ta"?"நடவு":"Planting"):`${lang==="ta"?"மாதம்":"Month"} ${u.month_number}`}</span><span style={{fontSize:11,color:C.dm}}>📅 {fmtDateTime(u.created_at)}</span></div>
 {u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}
 {stripGeo(u.notes)&&<div style={{fontSize:12,color:C.mu,fontStyle:"italic",marginTop:2}}>📝 {stripGeo(u.notes)}</div>}
 {geo&&<div style={{fontSize:11,color:C.bl,marginTop:4,fontWeight:600}}>📍 GPS: {geo.lat.toFixed(5)}, {geo.lng.toFixed(5)}</div>}
@@ -348,7 +326,7 @@ return<div><div style={{fontSize:15,fontWeight:700,marginBottom:12}}>📷 {lang=
 <img src={u.photo_url} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
 <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,.7))",padding:"12px 6px 4px",color:"#fff",fontSize:9,fontWeight:600}}>
 <div>{u.plants?.name||""}</div>
-<div style={{opacity:.85}}>📅 {fmtDate(u.created_at)}{geo?" · 📍":""}</div>
+<div style={{opacity:.85}}>📅 {fmtDateTime(u.created_at)}{geo?" · 📍":""}</div>
 </div>
 </div>})}
 </div></Card>}
@@ -378,7 +356,7 @@ const[photo,setPhoto]=useState(null);const[photoFile,setPhotoFile]=useState(null
 const[comment,setComment]=useState("");const[saving,setSaving]=useState(false);const[err,setErr]=useState("");
 const[history,setHistory]=useState([]);const[loadingHistory,setLoadingHistory]=useState(true);
 const[expId,setExpId]=useState(null);const[expRunning,setExpRunning]=useState(false);const[expErr,setExpErr]=useState("");
-const fileRef=useRef();
+const fileRef=useRef();const cameraRef=useRef();
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
 
 const loadHistory=async()=>{setLoadingHistory(true);
@@ -441,10 +419,17 @@ return<div style={{maxWidth:520,margin:"0 auto"}}>
 
 {step===1&&<div>
 <div style={{marginBottom:10,fontSize:13,color:C.mu}}>🌱 {cropName} {details?`— ${details.slice(0,50)}...`:""}</div>
-<div onClick={()=>fileRef.current?.click()} style={{border:`2px dashed ${C.bdr}`,borderRadius:14,padding:"50px 24px",textAlign:"center",cursor:"pointer",background:C.alt}}>
-<div style={{fontSize:44,marginBottom:12}}>📸</div><div style={{fontSize:15,fontWeight:600}}>{lang==="ta"?"படம் எடு அல்லது பதிவேற்று":"Capture or upload"}</div>
-<div style={{fontSize:11,color:C.mu,marginTop:6}}>{lang==="ta"?"கேமரா அல்லது கேலரியில் இருந்து":"Camera or photo gallery"}</div>
-<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/></div>
+<Card style={{background:C.alt,border:`2px dashed ${C.bdr}`,padding:"30px 20px",textAlign:"center"}}>
+<div style={{fontSize:44,marginBottom:10}}>📸</div>
+<div style={{fontSize:15,fontWeight:600,marginBottom:4}}>{lang==="ta"?"படம் எடு அல்லது பதிவேற்று":"Capture or upload"}</div>
+<div style={{fontSize:11,color:C.mu,marginBottom:14}}>{lang==="ta"?"கேமரா அல்லது கேலரியில் இருந்து":"Camera or photo gallery"}</div>
+<div style={{display:"flex",gap:8}}>
+<Btn onClick={()=>cameraRef.current?.click()} style={{flex:1}}>📷 {lang==="ta"?"படம் எடு":"Take Photo"}</Btn>
+<Btn onClick={()=>fileRef.current?.click()} primary={false} style={{flex:1}}>🖼️ {lang==="ta"?"பதிவேற்று":"Upload"}</Btn>
+</div>
+<input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handlePhoto}/>
+<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
+</Card>
 </div>}
 
 {step===2&&<div style={{animation:"fadeIn .4s"}}>
@@ -479,7 +464,7 @@ return<div style={{maxWidth:520,margin:"0 auto"}}>
 <img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>
 <div style={{flex:1,minWidth:0}}>
 <div style={{fontSize:14,fontWeight:700}}>{p.diagnosis||"Pending"}</div>
-<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · 📅 {fmtDate(p.created_at)}{geo?" · 📍":""}</div>
+<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · 📅 {fmtDateTime(p.created_at)}{geo?" · 📍":""}</div>
 <div style={{display:"flex",gap:6,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
 <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:sevBg(p.severity),color:sevColor(p.severity)}}>{sevLabel(p.severity)}</span>
 {isAdminDx(p)&&<span style={{fontSize:10,color:C.ac,fontWeight:700}}>👨‍🌾 {lang==="ta"?"நிர்வாகி":"Admin reviewed"}</span>}
@@ -542,10 +527,13 @@ return<div style={{maxWidth:520,margin:"0 auto"}}>
 // Reply parent encoded in content as `[>>UUID]` prefix to support nested replies without schema changes
 const parseReplyParent=t=>{if(!t)return{parent:null,text:t||""};const m=t.match(/^\[>>([0-9a-f-]+)\]\s*/i);if(!m)return{parent:null,text:t};return{parent:m[1],text:t.slice(m[0].length)}};
 
-const Community=({lang,user})=>{const[posts,setPosts]=useState([]);const[np,setNp]=useState("");const[npPhoto,setNpPhoto]=useState(null);const[npFile,setNpFile]=useState(null);
+const Community=({lang,user})=>{const[posts,setPosts]=useState([]);const[np,setNp]=useState("");const[npFiles,setNpFiles]=useState([]);const[npPreviews,setNpPreviews]=useState([]);const[posting,setPosting]=useState(false);
 const[replyTo,setReplyTo]=useState(null);const[replyText,setReplyText]=useState("");const[replies,setReplies]=useState({});const[likedPosts,setLikedPosts]=useState({});
-const[loading,setLoading]=useState(true);const fileRef=useRef();
+const[loading,setLoading]=useState(true);const[lightbox,setLightbox]=useState(null);const fileRef=useRef();
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
+const MAX_PHOTOS=4;
+// photo_url stores 1..N URLs separated by newlines (backward-compatible with single-URL posts)
+const parsePhotoUrls=s=>s?s.split("\n").map(x=>x.trim()).filter(Boolean):[];
 
 const load=async()=>{const{data}=await sb.from("community_posts").select("*,profiles(name,village)").order("created_at",{ascending:false}).limit(30);setPosts(data||[]);
 if(data?.length){const ids=data.map(p=>p.id);const{data:reps}=await sb.from("community_replies").select("*,profiles(name)").in("post_id",ids).order("created_at");const g={};(reps||[]).forEach(r=>{if(!g[r.post_id])g[r.post_id]=[];g[r.post_id].push(r)});setReplies(g);
@@ -554,8 +542,15 @@ const{data:myLikes}=await sb.from("community_likes").select("post_id").eq("user_
 setLoading(false)};
 useEffect(()=>{load()},[]);
 
-const post=async()=>{if(!np.trim()&&!npFile)return;let photoUrl="";if(npFile){const path=`${user.id}/community/${Date.now()}.${npFile.name.split(".").pop()}`;await sb.storage.from("photos").upload(path,npFile);const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);photoUrl=publicUrl}
-await sb.from("community_posts").insert({author_id:user.id,content:np,photo_url:photoUrl||null});setNp("");setNpPhoto(null);setNpFile(null);load()};
+const post=async()=>{if(!np.trim()&&npFiles.length===0)return;setPosting(true);
+const urls=[];
+for(let i=0;i<npFiles.length;i++){const f=npFiles[i];const path=`${user.id}/community/${Date.now()}-${i}.${f.name.split(".").pop()}`;
+const{error:upErr}=await sb.storage.from("photos").upload(path,f);
+if(upErr){setPosting(false);alert((lang==="ta"?"படம் பதிவேற்ற முடியவில்லை: ":"Photo upload failed: ")+upErr.message);return}
+const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);urls.push(publicUrl)}
+const photoUrl=urls.length?urls.join("\n"):null;
+await sb.from("community_posts").insert({author_id:user.id,content:np,photo_url:photoUrl});
+setNp("");setNpFiles([]);setNpPreviews([]);setPosting(false);load()};
 
 const toggleLike=async(postId)=>{if(likedPosts[postId]){await sb.from("community_likes").delete().eq("post_id",postId).eq("user_id",user.id);await sb.from("community_posts").update({likes:Math.max(0,(posts.find(p=>p.id===postId)?.likes||1)-1)}).eq("id",postId)}else{await sb.from("community_likes").insert({post_id:postId,user_id:user.id});await sb.from("community_posts").update({likes:(posts.find(p=>p.id===postId)?.likes||0)+1}).eq("id",postId)}load()};
 
@@ -567,13 +562,21 @@ setReplyText("");setReplyTo(null);load()};
 const startDeletePost=p=>undoDel(p.id,lang==="ta"?"இடுகை நீக்கப்பட்டது":"Post deleted",async()=>{
 await sb.from("community_replies").delete().eq("post_id",p.id);
 await sb.from("community_likes").delete().eq("post_id",p.id);
-try{const path=p.photo_url?.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(_){}
+for(const url of parsePhotoUrls(p.photo_url)){try{const path=url.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(_){}}
 const{error}=await sb.from("community_posts").delete().eq("id",p.id);
 if(error)throw error;load()});
 const startDeleteReply=r=>undoDel(r.id,lang==="ta"?"கருத்து நீக்கப்பட்டது":"Reply deleted",async()=>{
 const{error}=await sb.from("community_replies").delete().eq("id",r.id);
 if(error)throw error;load()});
-const handlePhoto=e=>{const f=e.target.files?.[0];if(!f)return;setNpFile(f);const r=new FileReader();r.onload=ev=>setNpPhoto(ev.target.result);r.readAsDataURL(f)};
+const handlePhoto=e=>{const picked=Array.from(e.target.files||[]);e.target.value="";if(!picked.length)return;
+const slotsLeft=MAX_PHOTOS-npFiles.length;
+const accepted=picked.slice(0,slotsLeft);
+if(picked.length>slotsLeft)alert(lang==="ta"?`அதிகபட்சம் ${MAX_PHOTOS} படங்கள்`:`Maximum ${MAX_PHOTOS} photos`);
+const startIdx=npFiles.length;
+setNpFiles([...npFiles,...accepted]);
+setNpPreviews([...npPreviews,...accepted.map(()=>"")]);
+accepted.forEach((f,i)=>{const r=new FileReader();r.onload=ev=>{setNpPreviews(prev=>{const next=[...prev];next[startIdx+i]=ev.target.result;return next})};r.readAsDataURL(f)})};
+const removePhoto=i=>{setNpFiles(npFiles.filter((_,j)=>j!==i));setNpPreviews(npPreviews.filter((_,j)=>j!==i))};
 
 const renderReply=(r,postId,depth)=>{if(isHidden(r.id))return null;const{text}=parseReplyParent(r.content);const myReply=r.author_id===user.id;const childReplies=(replies[postId]||[]).filter(x=>parseReplyParent(x.content).parent===r.id);const showReplyForm=replyTo&&replyTo.postId===postId&&replyTo.parentReplyId===r.id;
 return<div key={r.id} style={{marginTop:8,marginLeft:Math.min(depth,3)*14,padding:8,background:depth===0?C.alt:"#f5f1e7",borderRadius:8,borderLeft:depth>0?`2px solid ${C.bdr}`:"none"}}>
@@ -598,20 +601,28 @@ return<div key={r.id} style={{marginTop:8,marginLeft:Math.min(depth,3)*14,paddin
 return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"சமூகம்":"Community"}</h2>
 <Card style={{background:C.alt}}>
 <VInput lang={lang} value={np} onChange={setNp} placeholder={lang==="ta"?"பதிவு எழுது...":"Write a post..."} multi/>
-{npPhoto&&<div style={{marginBottom:10}}><img src={npPhoto} style={{width:"100%",maxHeight:120,objectFit:"cover",borderRadius:8}}/></div>}
-<div style={{display:"flex",gap:8}}>
-<button onClick={()=>fileRef.current?.click()} style={{padding:"7px 12px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>📷 {lang==="ta"?"படம்":"Photo"}</button>
-<input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
-<div style={{flex:1}}/><button onClick={post} style={{padding:"7px 18px",background:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"பதிவிடு":"Post"}</button>
+{npPreviews.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6,marginBottom:10}}>
+{npPreviews.map((src,i)=><div key={i} style={{position:"relative",aspectRatio:"1",borderRadius:8,overflow:"hidden",background:"#0001"}}>
+{src&&<img src={src} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
+<button onClick={()=>removePhoto(i)} style={{position:"absolute",top:4,right:4,width:24,height:24,borderRadius:"50%",background:"rgba(0,0,0,.7)",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit"}}>×</button>
+</div>)}
+</div>}
+<div style={{display:"flex",gap:8,alignItems:"center"}}>
+<button onClick={()=>fileRef.current?.click()} disabled={npFiles.length>=MAX_PHOTOS} style={{padding:"7px 12px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:npFiles.length>=MAX_PHOTOS?C.dm:C.mu,fontSize:12,fontWeight:600,cursor:npFiles.length>=MAX_PHOTOS?"not-allowed":"pointer",fontFamily:"inherit"}}>📷 {lang==="ta"?"படம்":"Photo"} ({npFiles.length}/{MAX_PHOTOS})</button>
+<input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={handlePhoto}/>
+<div style={{flex:1}}/><button onClick={post} disabled={posting||(!np.trim()&&npFiles.length===0)} style={{padding:"7px 18px",background:posting?C.dm:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:posting?"default":"pointer",fontFamily:"inherit"}}>{posting?(lang==="ta"?"பதிவிடுகிறது...":"Posting..."):(lang==="ta"?"பதிவிடு":"Post")}</button>
 </div></Card>
-{posts.filter(p=>!isHidden(p.id)).map(p=>{const myPost=p.author_id===user.id;const allReplies=replies[p.id]||[];const topLevel=allReplies.filter(r=>parseReplyParent(r.content).parent===null);const showPostReplyForm=replyTo&&replyTo.postId===p.id&&!replyTo.parentReplyId;
+{posts.filter(p=>!isHidden(p.id)).map(p=>{const myPost=p.author_id===user.id;const allReplies=replies[p.id]||[];const topLevel=allReplies.filter(r=>parseReplyParent(r.content).parent===null);const showPostReplyForm=replyTo&&replyTo.postId===p.id&&!replyTo.parentReplyId;const photoUrls=parsePhotoUrls(p.photo_url);
 return<Card key={p.id}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-<div style={{display:"flex",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>👤</div><div><div style={{fontSize:13,fontWeight:700}}>{p.profiles?.name||"Farmer"}</div><div style={{fontSize:10,color:C.dm}}>{p.profiles?.village||""} · {fmtDate(p.created_at)}</div></div></div>
+<div style={{display:"flex",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>👤</div><div><div style={{fontSize:13,fontWeight:700}}>{p.profiles?.name||"Farmer"}</div><div style={{fontSize:10,color:C.dm}}>{p.profiles?.village||""} · 📅 {fmtDateTime(p.created_at)}</div></div></div>
 {myPost&&<button onClick={()=>startDeletePost(p)} style={{background:"none",border:"none",color:C.dg,fontSize:14,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"}} title={lang==="ta"?"இடுகையை நீக்கு":"Delete post"}>🗑️</button>}
 </div>
 <div style={{fontSize:14,lineHeight:1.6,marginBottom:8}}>{p.content}</div>
-{p.photo_url&&<img src={p.photo_url} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:8,marginBottom:8}}/>}
+{photoUrls.length===1&&<img src={photoUrls[0]} onClick={()=>setLightbox(photoUrls[0])} style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:8,marginBottom:8,cursor:"pointer"}}/>}
+{photoUrls.length>1&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:4,marginBottom:8}}>
+{photoUrls.slice(0,4).map((u,i)=><img key={i} src={u} onClick={()=>setLightbox(u)} style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,cursor:"pointer",display:"block"}}/>)}
+</div>}
 <div style={{display:"flex",gap:14,borderTop:`1px solid ${C.bdr}`,paddingTop:8}}>
 <button onClick={()=>toggleLike(p.id)} style={{background:"none",border:"none",color:likedPosts[p.id]?C.ac:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>👍 {lang==="ta"?"உதவியாக":"Helpful"} ({p.likes||0})</button>
 <button onClick={()=>{setReplyTo(showPostReplyForm?null:{postId:p.id,parentReplyId:null});setReplyText("")}} style={{background:"none",border:"none",color:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>💬 {lang==="ta"?"பதில்":"Reply"} ({allReplies.length})</button>
@@ -619,6 +630,7 @@ return<Card key={p.id}>
 {topLevel.map(r=>renderReply(r,p.id,0))}
 {showPostReplyForm&&<div style={{marginTop:8,display:"flex",gap:6}}><input value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder={(lang==="ta"?"பதில்":"Reply")+"..."} style={{flex:1,padding:"8px 10px",border:`1px solid ${C.bdr}`,borderRadius:8,fontSize:13,outline:"none",fontFamily:"inherit"}}/><button onClick={reply} style={{padding:"8px 14px",background:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>{lang==="ta"?"பதில்":"Reply"}</button></div>}
 </Card>})}
+{lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,cursor:"pointer"}}><img src={lightbox} style={{maxWidth:"100%",maxHeight:"100%",borderRadius:8}}/></div>}
 {Toast}
 </div>};
 
@@ -710,7 +722,7 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 {p.photo_url&&<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
 <div style={{flex:1,minWidth:0}}>
 <div style={{fontSize:13,fontWeight:700}}>{p.diagnosis||"Pending"}</div>
-<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · 📅 {fmtDate(p.created_at)}{pgeo?" · 📍":""} · {p.diagnosed_by||"pending"}</div>
+<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · 📅 {fmtDateTime(p.created_at)}{pgeo?" · 📍":""} · {p.diagnosed_by||"pending"}</div>
 <div style={{marginTop:4}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:sevBgAdmin(p.severity),color:sevColorAdmin(p.severity)}}>{p.severity||"unknown"}</span></div>
 </div>
 {!expanded&&<span style={{color:C.dm,fontSize:18}}>→</span>}
