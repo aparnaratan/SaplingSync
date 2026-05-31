@@ -653,16 +653,20 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 // ADMIN (#1 — full farmer drill-down with plants + growth + pest + map)
 // ═══════════════════════════════════════════════════════════════════════════
 const AdminDash=({lang,onSwitch})=>{const[tab,setTab]=useState("farmers");const[farmers,setFarmers]=useState([]);const[pending,setPending]=useState([]);
-const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
+const[plantReqs,setPlantReqs]=useState([]);const[dxReqs,setDxReqs]=useState([]);const[exporting,setExporting]=useState(false);const[reqBusy,setReqBusy]=useState(null);
+const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fReqs,setFReqs]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
 const[revId,setRevId]=useState(null);const[rating,setRating]=useState(0);const[comment,setComment]=useState("");const[loading,setLoading]=useState(true);
 const[selPestId,setSelPestId]=useState(null);const[pestEdit,setPestEdit]=useState({diagnosis:"",severity:"unknown",notes:""});
 const[pestRunning,setPestRunning]=useState(false);const[pestSaving,setPestSaving]=useState(false);const[pestErr,setPestErr]=useState("");const[aiResult,setAiResult]=useState(null);
 
 const load=async()=>{setLoading(true);const{data:f}=await sb.from("profiles").select("*").eq("role","farmer");setFarmers(f||[]);
-const{data:p}=await sb.from("growth_updates").select("*,plants(name,species),profiles!growth_updates_farmer_id_fkey(name,village,district)").is("admin_rating",null).order("created_at",{ascending:false});setPending(p||[]);setLoading(false)};
+const{data:p}=await sb.from("growth_updates").select("*,plants(name,species),profiles!growth_updates_farmer_id_fkey(name,village,district)").is("admin_rating",null).order("created_at",{ascending:false});setPending(p||[]);
+const{data:pr}=await sb.from("plant_requests").select("*").neq("status","delivered").order("created_at",{ascending:false});setPlantReqs(pr||[]);
+const{data:dx}=await sb.from("pest_checks").select("*").neq("diagnosed_by","admin").order("created_at",{ascending:false});setDxReqs(dx||[]);setLoading(false)};
 useEffect(()=>{load()},[]);
 
 const openFarmer=async f=>{setSelF(f);const{data:pl}=await sb.from("plants").select("*").eq("farmer_id",f.id);setFPlants(pl||[]);
+const{data:rq}=await sb.from("plant_requests").select("*").eq("farmer_id",f.id).order("created_at",{ascending:false});setFReqs(rq||[]);
 const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farmer_id",f.id).order("created_at",{ascending:false});setFUpdates(gu||[]);
 const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",f.id).order("created_at",{ascending:false});setFPests(pc||[])};
 
@@ -679,50 +683,35 @@ setPestRunning(false)};
 const savePestReview=async()=>{if(!selPestId)return;setPestSaving(true);
 const geoPrefix=pestEdit._geo?`[📍${pestEdit._geo.lat.toFixed(5)},${pestEdit._geo.lng.toFixed(5)}] `:"";
 await sb.from("pest_checks").update({diagnosis:pestEdit.diagnosis||"Reviewed",severity:pestEdit.severity,admin_notes:geoPrefix+(pestEdit.notes||""),diagnosed_by:"admin"}).eq("id",selPestId);
-setPestSaving(false);closePest();if(selF)openFarmer(selF)};
+setPestSaving(false);closePest();load();if(selF)openFarmer(selF)};
 const sevColorAdmin=s=>({high:C.dg,medium:C.wr,low:C.ac,unknown:C.bl})[s]||C.bl;
 const sevBgAdmin=s=>({high:C.dL,medium:C.wL,low:C.aL,unknown:C.bL})[s]||C.bL;
 
-if(loading)return<Card style={{textAlign:"center",padding:40,color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>;
+const setReqStatus=async(r,status)=>{setReqBusy(r.id);await sb.from("plant_requests").update({status}).eq("id",r.id);setReqBusy(null);load();if(selF)openFarmer(selF)};
+const reqStatusLabel=s=>s==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):s==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):(lang==="ta"?"கோரப்பட்டது":"Requested");
+const reqStatusColor=s=>s==="delivered"?C.ac:s==="approved"?C.bl:C.wr;
+const reqStatusBg=s=>s==="delivered"?C.aL:s==="approved"?C.bL:C.wL;
 
-// Farmer detail
-if(selF){let existingCrops=[];try{existingCrops=JSON.parse(selF.notes||"[]")}catch(e){}
-return<div style={{maxWidth:700,margin:"0 auto"}}>
-<button onClick={()=>setSelF(null)} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:14,fontFamily:"inherit"}}>← {lang==="ta"?"அனைத்து":"All Farmers"}</button>
-<Card style={{borderLeft:`4px solid ${C.ac}`}}>
-<h3 style={{fontSize:18,fontWeight:800,marginBottom:4}}>{selF.name||selF.phone||"(unnamed)"}</h3>
-<div style={{fontSize:13,color:C.mu}}>📍 {[selF.village,selF.block,selF.district].filter(Boolean).join(", ")||"—"}</div>
-<div style={{fontSize:13,color:C.mu}}>📞 {selF.phone||"—"} · {selF.soil_type||"—"} · {selF.water_source||"—"}</div>
-{existingCrops.length>0&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>{existingCrops.map((c,i)=><Pill key={i} label={`🌱 ${c.type}: ${c.qty}`} color={C.ac} bg={C.aL}/>)}</div>}
-</Card>
-{selF.latitude&&<LiveMap lat={selF.latitude} lng={selF.longitude} lang={lang}/>}
+const csvCell=v=>{const s=(v==null?"":String(v));return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+const exportCsv=async()=>{setExporting(true);
+const{data:allReq}=await sb.from("plant_requests").select("*");
+const{data:allPl}=await sb.from("plants").select("*");
+const header=["Name","Phone","Village","Block","District","Soil type","Water source","Land (acres)","Existing crops","Plants requested","Issued plants"];
+const rows=[header];
+farmers.forEach(f=>{let crops=[];try{crops=JSON.parse(f.notes||"[]")}catch(e){}
+const reqs=(allReq||[]).filter(r=>r.farmer_id===f.id).map(r=>`${PLANTS5.find(c=>c.id===r.species)?.en||r.species} x${r.quantity} [${r.status||"requested"}]`).join("; ");
+const pls=(allPl||[]).filter(p=>p.farmer_id===f.id).map(p=>`${p.name||p.species||""}${p.growth_stage?" ("+p.growth_stage+")":""}`).join("; ");
+rows.push([f.name||"",f.phone||"",f.village||"",f.block||"",f.district||"",f.soil_type||"",f.water_source||"",f.land_area_acres??"",crops.map(c=>`${c.type}:${c.qty}`).join(" "),reqs,pls])});
+const csv=rows.map(r=>r.map(csvCell).join(",")).join("\n");
+const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);
+const a=document.createElement("a");a.href=url;a.download="saplingsync-farmers.csv";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setExporting(false)};
 
-<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🌳 {lang==="ta"?"தாவரங்கள்":"Plants"} ({fPlants.length})</div>
-{fPlants.map(pl=><Card key={pl.id} style={{padding:12}}><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:20}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||"🌿"}</span><span style={{fontSize:14,fontWeight:600}}>{pl.name}</span></div></Card>)}
-
-<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>📷 {lang==="ta"?"வளர்ச்சி":"Growth"} ({fUpdates.length})</div>
-{fUpdates.map(u=>{const ugeo=parseGeo(u.notes);return<Card key={u.id}>
-<div style={{display:"flex",gap:10}}>{u.photo_url&&<img src={u.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
-<div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{u.plants?.name} — M{u.month_number}</div>
-<div style={{fontSize:11,color:C.mu}}>📅 {fmtDateTime(u.created_at)}</div>
-{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{stripGeo(u.notes)&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{stripGeo(u.notes)}</div>}
-{ugeo?<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 GPS: {ugeo.lat.toFixed(5)}, {ugeo.lng.toFixed(5)} <a href={`https://maps.google.com/?q=${ugeo.lat},${ugeo.lng}`} target="_blank" style={{color:C.bl}}>↗</a></div>:<div style={{fontSize:10,color:C.dm,marginTop:2,fontStyle:"italic"}}>{lang==="ta"?"GPS இல்லை":"No GPS"}</div>}
-{u.admin_rating?<Pill label={`${["","😟","😐","🙂","😊","🌟"][u.admin_rating]} ${u.admin_rating}/5 ${u.admin_comment||""}`} color={C.bl} bg={C.bL}/>:<Pill label="Pending" color={C.wr} bg={C.wL}/>}
-</div></div>
-{!u.admin_rating&&(revId===u.id?<div style={{marginTop:10,background:C.aL,padding:12,borderRadius:10}}>
-<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
-<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder={lang==="ta"?"ஆலோசனை...":"Advice..."}/>
-<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>{lang==="ta"?"பின்":"Back"}</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>{lang==="ta"?"சமர்ப்பி":"Submit"}</Btn></div>
-</div>:<button onClick={()=>setRevId(u.id)} style={{marginTop:8,width:"100%",padding:10,background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer"}}>📝 Review</button>)}
-</Card>})}
-
-{fPests.length>0&&<><div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🔬 {lang==="ta"?"நோய் அறிக்கைகள்":"Disease Reports"} ({fPests.length})</div>
-{fPests.map(p=>{const expanded=selPestId===p.id;const pgeo=parseGeo(p.admin_notes);return<Card key={p.id} style={!expanded?{cursor:"pointer"}:{}} onClick={!expanded?()=>openPest(p):undefined}>
+const renderPestCard=(p,farmer)=>{const expanded=selPestId===p.id;const pgeo=parseGeo(p.admin_notes);return<Card key={p.id} style={!expanded?{cursor:"pointer"}:{}} onClick={!expanded?()=>openPest(p):undefined}>
 <div style={{display:"flex",gap:10,alignItems:"center"}}>
 {p.photo_url&&<img src={p.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
 <div style={{flex:1,minWidth:0}}>
 <div style={{fontSize:13,fontWeight:700}}>{p.diagnosis||"Pending"}</div>
-<div style={{fontSize:11,color:C.mu}}>{p.crop_type} · 📅 {fmtDateTime(p.created_at)}{pgeo?" · 📍":""} · {p.diagnosed_by||"pending"}</div>
+<div style={{fontSize:11,color:C.mu}}>{farmer?(farmer.name||"Farmer")+" · ":""}{p.crop_type} · 📅 {fmtDateTime(p.created_at)}{pgeo?" · 📍":""} · {p.diagnosed_by||"pending"}</div>
 <div style={{marginTop:4}}><span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:sevBgAdmin(p.severity),color:sevColorAdmin(p.severity)}}>{p.severity||"unknown"}</span></div>
 </div>
 {!expanded&&<span style={{color:C.dm,fontSize:18}}>→</span>}
@@ -754,7 +743,47 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 <Btn onClick={savePestReview} disabled={pestSaving} style={{flex:1}}>💾 {pestSaving?(lang==="ta"?"சேமிக்கிறது...":"Saving..."):(lang==="ta"?"சேமி":"Save review")}</Btn>
 </div>
 </div>}
-</Card>})}</>}
+</Card>};
+
+if(loading)return<Card style={{textAlign:"center",padding:40,color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>;
+
+// Farmer detail
+if(selF){let existingCrops=[];try{existingCrops=JSON.parse(selF.notes||"[]")}catch(e){}
+return<div style={{maxWidth:700,margin:"0 auto"}}>
+<button onClick={()=>setSelF(null)} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:14,fontFamily:"inherit"}}>← {lang==="ta"?"அனைத்து":"All Farmers"}</button>
+<Card style={{borderLeft:`4px solid ${C.ac}`}}>
+<h3 style={{fontSize:18,fontWeight:800,marginBottom:4}}>{selF.name||selF.phone||"(unnamed)"}</h3>
+<div style={{fontSize:13,color:C.mu}}>📍 {[selF.village,selF.block,selF.district].filter(Boolean).join(", ")||"—"}</div>
+<div style={{fontSize:13,color:C.mu}}>📞 {selF.phone||"—"} · {selF.soil_type||"—"} · {selF.water_source||"—"}</div>
+{existingCrops.length>0&&<div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>{existingCrops.map((c,i)=><Pill key={i} label={`🌱 ${c.type}: ${c.qty}`} color={C.ac} bg={C.aL}/>)}</div>}
+</Card>
+{selF.latitude&&<LiveMap lat={selF.latitude} lng={selF.longitude} lang={lang}/>}
+
+<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🌱 {lang==="ta"?"கோரப்பட்ட தாவரங்கள்":"Plants Requested"} ({fReqs.length})</div>
+{fReqs.length===0&&<Card style={{padding:12,color:C.dm,fontSize:13}}>{lang==="ta"?"கோரிக்கைகள் இல்லை":"No requests"}</Card>}
+{fReqs.map(r=>{const cr=PLANTS5.find(c=>c.id===r.species);return<Card key={r.id} style={{padding:12}}><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:20}}>{cr?.icon||"🌱"}</span><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{cr?.[lang]||r.species} <span style={{color:C.mu,fontWeight:500}}>×{r.quantity}</span></div><div style={{fontSize:11,color:C.dm}}>📅 {fmtDateTime(r.created_at)}</div></div><Pill label={reqStatusLabel(r.status)} color={reqStatusColor(r.status)} bg={reqStatusBg(r.status)}/></div></Card>})}
+
+<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🌳 {lang==="ta"?"வழங்கப்பட்ட தாவரங்கள்":"Issued Plants"} ({fPlants.length})</div>
+{fPlants.map(pl=><Card key={pl.id} style={{padding:12}}><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:20}}>{PLANTS5.find(c=>c.id===pl.species)?.icon||"🌿"}</span><span style={{fontSize:14,fontWeight:600}}>{pl.name}</span></div></Card>)}
+
+<div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>📷 {lang==="ta"?"வளர்ச்சி":"Growth"} ({fUpdates.length})</div>
+{fUpdates.map(u=>{const ugeo=parseGeo(u.notes);return<Card key={u.id}>
+<div style={{display:"flex",gap:10}}>{u.photo_url&&<img src={u.photo_url} style={{width:60,height:60,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
+<div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{u.plants?.name} — M{u.month_number}</div>
+<div style={{fontSize:11,color:C.mu}}>📅 {fmtDateTime(u.created_at)}</div>
+{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{stripGeo(u.notes)&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{stripGeo(u.notes)}</div>}
+{ugeo?<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 GPS: {ugeo.lat.toFixed(5)}, {ugeo.lng.toFixed(5)} <a href={`https://maps.google.com/?q=${ugeo.lat},${ugeo.lng}`} target="_blank" style={{color:C.bl}}>↗</a></div>:<div style={{fontSize:10,color:C.dm,marginTop:2,fontStyle:"italic"}}>{lang==="ta"?"GPS இல்லை":"No GPS"}</div>}
+{u.admin_rating?<Pill label={`${["","😟","😐","🙂","😊","🌟"][u.admin_rating]} ${u.admin_rating}/5 ${u.admin_comment||""}`} color={C.bl} bg={C.bL}/>:<Pill label="Pending" color={C.wr} bg={C.wL}/>}
+</div></div>
+{!u.admin_rating&&(revId===u.id?<div style={{marginTop:10,background:C.aL,padding:12,borderRadius:10}}>
+<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
+<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder={lang==="ta"?"ஆலோசனை...":"Advice..."}/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>{lang==="ta"?"பின்":"Back"}</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>{lang==="ta"?"சமர்ப்பி":"Submit"}</Btn></div>
+</div>:<button onClick={()=>setRevId(u.id)} style={{marginTop:8,width:"100%",padding:10,background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:C.ac,fontSize:13,fontWeight:600,cursor:"pointer"}}>📝 Review</button>)}
+</Card>})}
+
+{fPests.length>0&&<><div style={{fontSize:15,fontWeight:700,marginBottom:8,marginTop:8}}>🔬 {lang==="ta"?"நோய் அறிக்கைகள்":"Disease Reports"} ({fPests.length})</div>
+{fPests.map(p=>renderPestCard(p))}</>}
 </div>}
 
 // Main admin
@@ -763,16 +792,23 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 <h2 style={{fontSize:22,fontWeight:800}}>{lang==="ta"?"நிர்வாக டாஷ்போர்டு":"Admin Dashboard"}</h2>
 <button onClick={onSwitch} style={{padding:"8px 14px",background:C.aL,border:`1.5px solid ${C.ac}33`,borderRadius:10,color:C.ac,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>👨‍🌾 {lang==="ta"?"விவசாயி":"Farmer View"}</button>
 </div>
-<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-<Card style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:C.ac}}>{farmers.length}</div><div style={{fontSize:11,color:C.dm}}>{lang==="ta"?"விவசாயிகள்":"Farmers"}</div></Card>
-<Card style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:800,color:C.wr}}>{pending.length}</div><div style={{fontSize:11,color:C.dm}}>{lang==="ta"?"நிலுவை":"Pending"}</div></Card>
+<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+{[{k:"farmers",n:farmers.length,c:C.ac,l:lang==="ta"?"விவசாயிகள்":"Farmers"},{k:"requests",n:plantReqs.length,c:C.bl,l:lang==="ta"?"கோரிக்கைகள்":"Requests"},{k:"disease",n:dxReqs.length,c:C.dg,l:lang==="ta"?"நோய்":"Disease"},{k:"pending",n:pending.length,c:C.wr,l:lang==="ta"?"நிலுவை":"Growth"}].map(b=>{const active=tab===b.k;return<Card key={b.k} onClick={()=>setTab(b.k)} style={{textAlign:"center",marginBottom:0,padding:12,cursor:"pointer",border:`2px solid ${active?b.c:C.bdr}`,background:active?b.c+"14":C.sf}}><div style={{fontSize:26,fontWeight:800,color:b.c}}>{b.n}</div><div style={{fontSize:10,color:active?b.c:C.dm,fontWeight:active?700:400}}>{b.l}</div></Card>})}
 </div>
-<div style={{display:"flex",borderBottom:`2px solid ${C.bdr}`,marginBottom:16}}>
-{[{k:"farmers",l:`👩‍🌾 ${lang==="ta"?"விவசாயிகள்":"Farmers"}`},{k:"pending",l:`⏳ ${lang==="ta"?"நிலுவை":"Pending"}`}].map(tb=><button key={tb.k} onClick={()=>setTab(tb.k)} style={{padding:"9px 14px",border:"none",borderBottom:`2px solid ${tab===tb.k?C.ac:"transparent"}`,background:"transparent",color:tab===tb.k?C.ac:C.mu,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:-2,fontFamily:"inherit"}}>{tb.l}</button>)}
-</div>
+{tab==="farmers"&&<button onClick={exportCsv} disabled={exporting||farmers.length===0} style={{width:"100%",padding:11,marginBottom:12,background:C.aL,border:`1.5px solid ${C.ac}55`,borderRadius:10,color:C.ac,fontSize:13,fontWeight:700,cursor:exporting||farmers.length===0?"default":"pointer",fontFamily:"inherit",opacity:exporting||farmers.length===0?.6:1}}>⬇️ {exporting?(lang==="ta"?"ஏற்றுமதி செய்கிறது...":"Exporting..."):(lang==="ta"?"CSV ஏற்றுமதி (சுயவிவரம் + கோரிக்கைகள் + தாவரங்கள்)":"Export CSV (profile + requests + issued plants)")}</button>}
 {tab==="farmers"&&farmers.map(f=><Card key={f.id} style={{cursor:"pointer"}} onClick={()=>openFarmer(f)}>
 <div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:40,height:40,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>👨‍🌾</div>
 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{f.name||f.phone||"(unnamed)"}</div><div style={{fontSize:12,color:C.mu}}>{[f.village,f.district].filter(Boolean).join(", ")||"—"}</div></div><span style={{color:C.dm}}>→</span></div></Card>)}
+{tab==="requests"&&(plantReqs.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"நிலுவையில் கோரிக்கைகள் இல்லை":"No pending requests"}</Card>:plantReqs.map(r=>{const f=farmers.find(x=>x.id===r.farmer_id);const cr=PLANTS5.find(c=>c.id===r.species);return<Card key={r.id}>
+<div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:44,height:44,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{cr?.icon||"🌱"}</div>
+<div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{cr?.[lang]||r.species} <span style={{color:C.mu,fontWeight:500}}>×{r.quantity}</span></div>
+<div style={{fontSize:12,color:C.mu}}>{f?.name||"Farmer"}{f?.village?" · "+f.village:""} · 📅 {fmtDateTime(r.created_at)}</div></div>
+<Pill label={reqStatusLabel(r.status)} color={reqStatusColor(r.status)} bg={reqStatusBg(r.status)}/></div>
+<div style={{display:"flex",gap:8,marginTop:10}}>
+{r.status!=="approved"&&r.status!=="delivered"&&<Btn onClick={()=>setReqStatus(r,"approved")} primary={false} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>✅ {lang==="ta"?"அங்கீகரி":"Approve"}</Btn>}
+<Btn onClick={()=>setReqStatus(r,"delivered")} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>🚚 {lang==="ta"?"வழங்கப்பட்டது":"Mark delivered"}</Btn>
+</div></Card>}))}
+{tab==="disease"&&(dxReqs.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"நிலுவையில் நோய் கோரிக்கைகள் இல்லை":"No pending diagnosis requests"}</Card>:dxReqs.map(p=>renderPestCard(p,farmers.find(x=>x.id===p.farmer_id))))}
 {tab==="pending"&&(pending.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"முடிந்தது!":"All done!"}</Card>:pending.map(u=>{const ugeo=parseGeo(u.notes);return<Card key={u.id}>
 <div style={{display:"flex",gap:10,marginBottom:8}}>{u.photo_url&&<img src={u.photo_url} style={{width:70,height:70,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{u.profiles?.name||"Farmer"} — {u.plants?.name||"Plant"}</div><div style={{fontSize:12,color:C.mu}}>M{u.month_number} · {u.profiles?.village||""} · 📅 {fmtDateTime(u.created_at)}</div>{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{stripGeo(u.notes)&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{stripGeo(u.notes)}</div>}{ugeo&&<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 GPS: {ugeo.lat.toFixed(5)}, {ugeo.lng.toFixed(5)} <a href={`https://maps.google.com/?q=${ugeo.lat},${ugeo.lng}`} target="_blank" style={{color:C.bl}}>↗</a></div>}</div></div>
