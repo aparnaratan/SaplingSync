@@ -60,6 +60,7 @@ const parseGeo=t=>{if(!t)return null;const m=t.match(/\[📍([\-\d.]+),([\-\d.]+
 const stripGeo=t=>(t||"").replace(/\[📍[\-\d.,]+\]\s*/,"");
 const fmtDate=t=>{if(!t)return"";const d=new Date(t);if(isNaN(d))return t.slice?.(0,10)||"";return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})};
 const fmtDateTime=t=>{if(!t)return"";const d=new Date(t);if(isNaN(d))return t;return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})};
+const cropMeta=id=>PLANTS5.find(c=>c.id===id)||ALLCROPS.find(c=>c.id===id)||null;
 const getGeoNow=()=>new Promise(res=>{if(!navigator.geolocation)return res(null);navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),()=>res(null),{timeout:10000})});
 
 // Undo-able delete: optimistically hides the row, runs the actual delete after 5s
@@ -244,6 +245,7 @@ return<Card key={r.id}>
 const GrowthJournal=({lang,user})=>{const[plants,setPlants]=useState([]);const[updates,setUpdates]=useState([]);const[sel,setSel]=useState(null);
 const[uploading,setUploading]=useState(false);const[busy,setBusy]=useState("");const[height,setHeight]=useState("");const[notes,setNotes]=useState("");const fileRef=useRef();const cameraRef=useRef();
 const[allUpdates,setAllUpdates]=useState([]);const[lightbox,setLightbox]=useState(null);
+const[gType,setGType]=useState("all");const[gAll,setGAll]=useState(false);const[gPage,setGPage]=useState(0);const[gSel,setGSel]=useState(null);
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
 const emojis=["","😟","😐","🙂","😊","🌟"];
 const loadP=async()=>{const{data}=await sb.from("plants").select("*").eq("farmer_id",user.id);setPlants(data||[])};
@@ -320,16 +322,51 @@ if(sel)return<div>
 
 const photosOnly=allUpdates.filter(u=>u.photo_url&&!isHidden(u.id));
 return<div><div style={{fontSize:15,fontWeight:700,marginBottom:12}}>📷 {lang==="ta"?"வளர்ச்சி பதிவு":"Growth Journal"}</div>
-{photosOnly.length>0&&<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:700}}>🖼️ {lang==="ta"?"எல்லா வளர்ச்சி படங்களும்":"All Growth Photos"}</div><span style={{fontSize:11,color:C.dm}}>{photosOnly.length}</span></div>
-<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
-{photosOnly.map(u=>{const geo=parseGeo(u.notes);return<div key={u.id} onClick={()=>setLightbox(u.photo_url)} style={{position:"relative",borderRadius:8,overflow:"hidden",cursor:"pointer",aspectRatio:"1"}}>
-<img src={u.photo_url} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-<div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,.7))",padding:"12px 6px 4px",color:"#fff",fontSize:9,fontWeight:600}}>
-<div>{u.plants?.name||""}</div>
-<div style={{opacity:.85}}>📅 {fmtDateTime(u.created_at)}{geo?" · 📍":""}</div>
+{photosOnly.length>0&&(()=>{const reviewed=u=>!!u.admin_rating;
+const base=gAll?photosOnly:photosOnly.filter(u=>!reviewed(u));
+const types=[...new Set(photosOnly.map(u=>u.plants?.species).filter(Boolean))];
+const filtered=gType==="all"?base:base.filter(u=>u.plants?.species===gType);
+const totalPages=Math.max(1,Math.ceil(filtered.length/5));const page=Math.min(gPage,totalPages-1);
+const items=filtered.slice(page*5,page*5+5);
+const gsel=gSel?photosOnly.find(u=>u.id===gSel):null;const sgeo=gsel?parseGeo(gsel.notes):null;
+const chip=(active,col)=>({padding:"6px 12px",border:`1.5px solid ${active?(col||C.ac):C.bdr}`,background:active?(col||C.ac)+"14":C.sf,borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:active?(col||C.ac):C.mu,whiteSpace:"nowrap"});
+return<Card>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{fontSize:13,fontWeight:700}}>🖼️ {lang==="ta"?"வளர்ச்சி படங்கள்":"Growth Photos"}</div><span style={{fontSize:11,color:C.dm}}>{filtered.length}</span></div>
+<div style={{display:"flex",gap:6,marginBottom:10}}>
+{[{k:false,l:lang==="ta"?"மதிப்பாய்வு நிலுவை":"Pending review"},{k:true,l:lang==="ta"?"அனைத்தும்":"All photos"}].map(o=><button key={String(o.k)} onClick={()=>{setGAll(o.k);setGPage(0);setGSel(null)}} style={chip(gAll===o.k,C.bl)}>{o.l}</button>)}
 </div>
+<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+{["all",...types].map(t=>{const cm=t==="all"?null:cropMeta(t);return<button key={t} onClick={()=>{setGType(t);setGPage(0);setGSel(null)}} style={chip(gType===t)}>{t==="all"?(lang==="ta"?"அனைத்து வகை":"All types"):`${cm?.icon||"🌿"} ${cm?.[lang]||t}`}</button>})}
+</div>
+{filtered.length===0?<div style={{textAlign:"center",color:C.dm,fontSize:12,padding:16}}>{gAll?(lang==="ta"?"படங்கள் இல்லை":"No photos"):(lang==="ta"?"மதிப்பாய்வுக்கு நிலுவையில் எதுவும் இல்லை":"Nothing pending review")}</div>:<>
+<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+{items.map(u=>{const cm=cropMeta(u.plants?.species);const active=gSel===u.id;return<div key={u.id} onClick={()=>setGSel(active?null:u.id)} style={{position:"relative",borderRadius:8,overflow:"hidden",cursor:"pointer",aspectRatio:"1",border:active?`2px solid ${C.ac}`:`1px solid ${C.bdr}`}}>
+{u.photo_url?<img src={u.photo_url} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:<div style={{width:"100%",height:"100%",background:C.alt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{cm?.icon||"🌿"}</div>}
+<div style={{position:"absolute",top:2,left:2,fontSize:13,textShadow:"0 1px 2px rgba(0,0,0,.6)"}}>{cm?.icon||"🌿"}</div>
+{!u.admin_rating&&<div style={{position:"absolute",top:4,right:4,width:9,height:9,borderRadius:"50%",background:C.wr,border:"1.5px solid #fff"}} title={lang==="ta"?"நிலுவை":"Pending"}/>}
+{gAll&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(0,0,0,.55)",color:"#fff",fontSize:8,padding:"2px 3px",lineHeight:1.2}}>M{u.month_number} · {u.created_at?.slice(0,10)}</div>}
 </div>})}
-</div></Card>}
+</div>
+{totalPages>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginTop:12}}>
+<button disabled={page===0} onClick={()=>{setGPage(page-1);setGSel(null)}} style={{padding:"6px 12px",border:`1.5px solid ${C.bdr}`,borderRadius:8,background:C.sf,color:page===0?C.dm:C.tx,fontSize:13,fontWeight:600,cursor:page===0?"default":"pointer",fontFamily:"inherit",opacity:page===0?.5:1}}>‹ {lang==="ta"?"முந்தைய":"Prev"}</button>
+<span style={{fontSize:13,color:C.mu,fontWeight:600}}>{page+1} / {totalPages}</span>
+<button disabled={page>=totalPages-1} onClick={()=>{setGPage(page+1);setGSel(null)}} style={{padding:"6px 12px",border:`1.5px solid ${C.bdr}`,borderRadius:8,background:C.sf,color:page>=totalPages-1?C.dm:C.tx,fontSize:13,fontWeight:600,cursor:page>=totalPages-1?"default":"pointer",fontFamily:"inherit",opacity:page>=totalPages-1?.5:1}}>{lang==="ta"?"அடுத்து":"Next"} ›</button>
+</div>}
+</>}
+{gsel&&<div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${C.bdr}`}}>
+<div style={{display:"flex",gap:12}}>{gsel.photo_url&&<img src={gsel.photo_url} onClick={()=>setLightbox(gsel.photo_url)} style={{width:90,height:90,objectFit:"cover",borderRadius:10,flexShrink:0,cursor:"pointer"}}/>}
+<div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{gsel.plants?.name||"Plant"} — {gsel.month_number===1?(lang==="ta"?"நடவு":"Planting"):`M${gsel.month_number}`}</div>
+<div style={{fontSize:11,color:C.dm}}>📅 {fmtDateTime(gsel.created_at)}</div>
+{gsel.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {gsel.height_cm}cm</div>}
+{stripGeo(gsel.notes)&&<div style={{fontSize:12,color:C.mu,fontStyle:"italic",marginTop:2}}>📝 {stripGeo(gsel.notes)}</div>}
+{sgeo&&<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 {sgeo.lat.toFixed(5)}, {sgeo.lng.toFixed(5)}</div>}
+</div></div>
+{gsel.admin_rating?<div style={{marginTop:10,padding:10,background:`${C.bl}08`,borderRadius:8,borderLeft:`3px solid ${C.bl}`}}>
+<div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:700,color:C.bl}}>👨‍💼 {lang==="ta"?"நிர்வாகி":"Admin"}</span><span>{emojis[gsel.admin_rating]} {gsel.admin_rating}/5</span></div>
+{gsel.admin_comment&&<div style={{fontSize:12,color:C.mu,marginTop:4}}>{gsel.admin_comment}</div>}
+</div>:<div style={{marginTop:10,padding:8,background:C.alt,borderRadius:8,fontSize:11,color:C.dm,textAlign:"center"}}>⏳ {lang==="ta"?"மதிப்பீடு நிலுவையில்":"Awaiting review"}</div>}
+</div>}
+</Card>})()}
 {plants.length===0&&<Card style={{textAlign:"center",padding:20,color:C.dm,fontSize:13}}>{lang==="ta"?"முதலில் தாவரம் கோரிக்கை சேர்":"Request plants first"}</Card>}
 {plants.filter(pl=>!isHidden(pl.id)).map(pl=>{const c=allUpdates.filter(u=>u.plant_id===pl.id).length;return<Card key={pl.id}>
 <div style={{display:"flex",gap:12,alignItems:"center"}}>
@@ -749,7 +786,6 @@ const renderPestCard=(p,farmer)=>{const expanded=selPestId===p.id;const pgeo=par
 </div>}
 </Card>};
 
-const cropMeta=id=>PLANTS5.find(c=>c.id===id)||ALLCROPS.find(c=>c.id===id)||null;
 const renderGrowthTab=()=>{
 if(!gFarmer){const groups={};pending.forEach(u=>{if(!groups[u.farmer_id])groups[u.farmer_id]={id:u.farmer_id,prof:u.profiles||{},n:0};groups[u.farmer_id].n++});
 const flist=Object.values(groups).sort((a,b)=>b.n-a.n);
