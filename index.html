@@ -206,7 +206,9 @@ const NewPlants=({lang,user})=>{const[sel,setSel]=useState(null);const[count,set
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
 const load=async()=>{const{data}=await sb.from("plant_requests").select("*").eq("farmer_id",user.id).order("created_at",{ascending:false});setReqs(data||[]);setLoading(false)};
 useEffect(()=>{load()},[]);
-const add=async()=>{if(!sel||!count)return;await sb.from("plant_requests").insert({farmer_id:user.id,species:sel.id,quantity:parseInt(count)});
+const onCount=v=>setCount(v.replace(/[^0-9]/g,""));
+const qty=parseInt(count);const qtyValid=count!==""&&qty>=1&&qty<=500;
+const add=async()=>{if(!sel||!qtyValid)return;await sb.from("plant_requests").insert({farmer_id:user.id,species:sel.id,quantity:qty});
 // Also create a plant entry for the journal
 await sb.from("plants").insert({farmer_id:user.id,name:`${sel[lang]} (${count})`,species:sel.id,status:"healthy",growth_stage:"seedling",plant_type:"sapling"});
 setSel(null);setCount("");setJustAdded(true);setTimeout(()=>setJustAdded(false),3000);load()};
@@ -223,8 +225,9 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:12}}>
 {PLANTS5.map(c=><button key={c.id} onClick={()=>setSel(c)} style={{padding:"12px 4px",borderRadius:12,border:`2px solid ${sel?.id===c.id?C.ac:C.bdr}`,background:sel?.id===c.id?C.aL:C.sf,cursor:"pointer",textAlign:"center"}}><div style={{fontSize:28}}>{c.icon}</div><div style={{fontSize:10,fontWeight:600,color:sel?.id===c.id?C.aD:C.dm,marginTop:2}}>{c[lang]}</div></button>)}
 </div>
-{sel&&<div><Input label={lang==="ta"?"எத்தனை?":"How many?"} value={count} onChange={setCount} placeholder="100" type="number"/>
-<Btn onClick={add}>🌱 {lang==="ta"?"கோரிக்கை சேர்":"Request"} — {sel.icon} {sel[lang]}</Btn></div>}
+{sel&&<div><Input label={lang==="ta"?"எத்தனை? (1-500)":"How many? (1-500)"} value={count} onChange={onCount} placeholder="100" type="number"/>
+{count!==""&&!qtyValid&&<div style={{fontSize:12,color:C.dg,marginTop:-8,marginBottom:10}}>⚠️ {lang==="ta"?"1 முதல் 500 வரை எண்ணை உள்ளிடவும்":"Enter a number between 1 and 500"}</div>}
+<Btn onClick={add} disabled={!qtyValid}>🌱 {lang==="ta"?"கோரிக்கை சேர்":"Request"} — {sel.icon} {sel[lang]}</Btn></div>}
 </Card>
 {reqs.length>0&&<div style={{fontSize:15,fontWeight:700,marginTop:16,marginBottom:10}}>{lang==="ta"?"என் கோரிக்கைகள்":"My Requests"}</div>}
 {reqs.filter(r=>!isHidden(r.id)).map(r=>{const cr=PLANTS5.find(c=>c.id===r.species);
