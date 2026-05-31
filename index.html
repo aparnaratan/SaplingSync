@@ -656,6 +656,7 @@ const AdminDash=({lang,onSwitch})=>{const[tab,setTab]=useState("farmers");const[
 const[plantReqs,setPlantReqs]=useState([]);const[dxReqs,setDxReqs]=useState([]);const[exporting,setExporting]=useState(false);const[reqBusy,setReqBusy]=useState(null);
 const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fReqs,setFReqs]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
 const[revId,setRevId]=useState(null);const[rating,setRating]=useState(0);const[comment,setComment]=useState("");const[loading,setLoading]=useState(true);
+const[gFarmer,setGFarmer]=useState(null);const[gPhotos,setGPhotos]=useState([]);const[gType,setGType]=useState("all");const[gAll,setGAll]=useState(false);const[gPage,setGPage]=useState(0);
 const[selPestId,setSelPestId]=useState(null);const[pestEdit,setPestEdit]=useState({diagnosis:"",severity:"unknown",notes:""});
 const[pestRunning,setPestRunning]=useState(false);const[pestSaving,setPestSaving]=useState(false);const[pestErr,setPestErr]=useState("");const[aiResult,setAiResult]=useState(null);
 
@@ -670,7 +671,10 @@ const{data:rq}=await sb.from("plant_requests").select("*").eq("farmer_id",f.id).
 const{data:gu}=await sb.from("growth_updates").select("*,plants(name)").eq("farmer_id",f.id).order("created_at",{ascending:false});setFUpdates(gu||[]);
 const{data:pc}=await sb.from("pest_checks").select("*").eq("farmer_id",f.id).order("created_at",{ascending:false});setFPests(pc||[])};
 
-const review=async()=>{if(!rating)return;const u=(await sb.auth.getUser()).data.user;await sb.from("growth_updates").update({admin_rating:rating,admin_comment:comment,admin_reviewer_id:u.id,admin_review_date:new Date().toISOString()}).eq("id",revId);setRevId(null);setRating(0);setComment("");load();if(selF)openFarmer(selF)};
+const openGrowthFarmer=async f=>{setGFarmer(f);setGType("all");setGAll(false);setGPage(0);setRevId(null);const{data}=await sb.from("growth_updates").select("*,plants(name,species)").eq("farmer_id",f.id).order("created_at",{ascending:false});setGPhotos(data||[])};
+const refreshGrowthPhotos=async f=>{const{data}=await sb.from("growth_updates").select("*,plants(name,species)").eq("farmer_id",f.id).order("created_at",{ascending:false});setGPhotos(data||[])};
+
+const review=async()=>{if(!rating)return;const u=(await sb.auth.getUser()).data.user;await sb.from("growth_updates").update({admin_rating:rating,admin_comment:comment,admin_reviewer_id:u.id,admin_review_date:new Date().toISOString()}).eq("id",revId);setRevId(null);setRating(0);setComment("");load();if(selF)openFarmer(selF);if(gFarmer)refreshGrowthPhotos(gFarmer)};
 
 const openPest=p=>{setSelPestId(p.id);setPestEdit({diagnosis:p.diagnosis==="Pending review"||p.diagnosis==="Analyzing..."?"":(p.diagnosis||""),severity:p.severity||"unknown",notes:stripGeo(p.admin_notes||""),_geo:parseGeo(p.admin_notes||"")});setAiResult(null);setPestErr("")};
 const closePest=()=>{setSelPestId(null);setAiResult(null);setPestErr("")};
@@ -745,6 +749,64 @@ const renderPestCard=(p,farmer)=>{const expanded=selPestId===p.id;const pgeo=par
 </div>}
 </Card>};
 
+const cropMeta=id=>PLANTS5.find(c=>c.id===id)||ALLCROPS.find(c=>c.id===id)||null;
+const renderGrowthTab=()=>{
+if(!gFarmer){const groups={};pending.forEach(u=>{if(!groups[u.farmer_id])groups[u.farmer_id]={id:u.farmer_id,prof:u.profiles||{},n:0};groups[u.farmer_id].n++});
+const flist=Object.values(groups).sort((a,b)=>b.n-a.n);
+if(flist.length===0)return<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"முடிந்தது!":"All done!"}</Card>;
+return flist.map(g=>{const full=farmers.find(y=>y.id===g.id)||{id:g.id,...g.prof};return<Card key={g.id} style={{cursor:"pointer"}} onClick={()=>openGrowthFarmer(full)}>
+<div style={{display:"flex",gap:12,alignItems:"center"}}><div style={{width:40,height:40,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📷</div>
+<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{full.name||full.phone||"(unnamed)"}</div><div style={{fontSize:12,color:C.mu}}>{[full.village,full.district].filter(Boolean).join(", ")||"—"}</div></div>
+<Pill label={`${g.n} ${lang==="ta"?"புதியது":"new"}`} color={C.wr} bg={C.wL}/></div></Card>})}
+
+const reviewed=u=>!!u.admin_rating;
+const base=gAll?gPhotos:gPhotos.filter(u=>!reviewed(u));
+const types=[...new Set(gPhotos.map(u=>u.plants?.species).filter(Boolean))];
+const filtered=gType==="all"?base:base.filter(u=>u.plants?.species===gType);
+const totalPages=Math.max(1,Math.ceil(filtered.length/5));const page=Math.min(gPage,totalPages-1);
+const items=filtered.slice(page*5,page*5+5);
+const selPhoto=revId?gPhotos.find(u=>u.id===revId):null;const sgeo=selPhoto?parseGeo(selPhoto.notes):null;
+const chip=(active,col)=>({padding:"6px 12px",border:`1.5px solid ${active?(col||C.ac):C.bdr}`,background:active?(col||C.ac)+"14":C.sf,borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:active?(col||C.ac):C.mu,whiteSpace:"nowrap"});
+return<div>
+<button onClick={()=>{setGFarmer(null);setRevId(null)}} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:14,marginBottom:12,fontFamily:"inherit"}}>← {lang==="ta"?"விவசாயிகள்":"Farmers"}</button>
+<div style={{fontSize:16,fontWeight:800}}>📷 {gFarmer.name||gFarmer.phone||"Farmer"}</div>
+<div style={{fontSize:12,color:C.mu,marginBottom:12}}>{[gFarmer.village,gFarmer.district].filter(Boolean).join(", ")}{[gFarmer.village,gFarmer.district].filter(Boolean).length?" · ":""}{filtered.length} {lang==="ta"?"படங்கள்":"photos"}</div>
+<div style={{display:"flex",gap:6,marginBottom:10}}>
+{[{k:false,l:lang==="ta"?"மதிப்பாய்வு நிலுவை":"Unreviewed"},{k:true,l:lang==="ta"?"அனைத்தும்":"All photos"}].map(o=><button key={String(o.k)} onClick={()=>{setGAll(o.k);setGPage(0)}} style={chip(gAll===o.k,C.bl)}>{o.l}</button>)}
+</div>
+<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+{["all",...types].map(t=>{const cm=t==="all"?null:cropMeta(t);return<button key={t} onClick={()=>{setGType(t);setGPage(0)}} style={chip(gType===t)}>{t==="all"?(lang==="ta"?"அனைத்து வகை":"All types"):`${cm?.icon||"🌿"} ${cm?.[lang]||t}`}</button>})}
+</div>
+{filtered.length===0?<Card style={{textAlign:"center",color:C.mu,padding:24}}>{lang==="ta"?"படங்கள் இல்லை":"No photos"}</Card>:<>
+<div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+{items.map(u=>{const cm=cropMeta(u.plants?.species);const active=revId===u.id;return<div key={u.id} onClick={()=>{setRevId(u.id);setRating(0);setComment("")}} style={{position:"relative",borderRadius:8,overflow:"hidden",cursor:"pointer",aspectRatio:"1",border:active?`2px solid ${C.ac}`:`1px solid ${C.bdr}`}}>
+{u.photo_url?<img src={u.photo_url} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{width:"100%",height:"100%",background:C.alt,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{cm?.icon||"🌿"}</div>}
+<div style={{position:"absolute",top:2,left:2,fontSize:13,textShadow:"0 1px 2px rgba(0,0,0,.6)"}}>{cm?.icon||"🌿"}</div>
+{!u.admin_rating&&<div style={{position:"absolute",top:4,right:4,width:9,height:9,borderRadius:"50%",background:C.wr,border:"1.5px solid #fff"}}/>}
+{gAll&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(0,0,0,.55)",color:"#fff",fontSize:8,padding:"2px 3px",lineHeight:1.2}}>M{u.month_number} · {u.created_at?.slice(0,10)}</div>}
+</div>})}
+</div>
+{totalPages>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginTop:12}}>
+<button disabled={page===0} onClick={()=>setGPage(page-1)} style={{padding:"6px 12px",border:`1.5px solid ${C.bdr}`,borderRadius:8,background:C.sf,color:page===0?C.dm:C.tx,fontSize:13,fontWeight:600,cursor:page===0?"default":"pointer",fontFamily:"inherit",opacity:page===0?.5:1}}>‹ {lang==="ta"?"முந்தைய":"Prev"}</button>
+<span style={{fontSize:13,color:C.mu,fontWeight:600}}>{page+1} / {totalPages}</span>
+<button disabled={page>=totalPages-1} onClick={()=>setGPage(page+1)} style={{padding:"6px 12px",border:`1.5px solid ${C.bdr}`,borderRadius:8,background:C.sf,color:page>=totalPages-1?C.dm:C.tx,fontSize:13,fontWeight:600,cursor:page>=totalPages-1?"default":"pointer",fontFamily:"inherit",opacity:page>=totalPages-1?.5:1}}>{lang==="ta"?"அடுத்து":"Next"} ›</button>
+</div>}
+</>}
+{selPhoto&&<Card style={{borderLeft:`4px solid ${C.ac}`,marginTop:14}}>
+<div style={{display:"flex",gap:10,marginBottom:8}}>{selPhoto.photo_url&&<img src={selPhoto.photo_url} style={{width:80,height:80,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
+<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{selPhoto.plants?.name||"Plant"} — M{selPhoto.month_number}</div>
+<div style={{fontSize:12,color:C.mu}}>📅 {fmtDateTime(selPhoto.created_at)}</div>
+{selPhoto.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {selPhoto.height_cm}cm</div>}{stripGeo(selPhoto.notes)&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{stripGeo(selPhoto.notes)}</div>}
+{sgeo&&<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 {sgeo.lat.toFixed(5)}, {sgeo.lng.toFixed(5)} <a href={`https://maps.google.com/?q=${sgeo.lat},${sgeo.lng}`} target="_blank" style={{color:C.bl}}>↗</a></div>}</div></div>
+{selPhoto.admin_rating?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><Pill label={`${["","😟","😐","🙂","😊","🌟"][selPhoto.admin_rating]} ${selPhoto.admin_rating}/5 ${selPhoto.admin_comment||""}`} color={C.bl} bg={C.bL}/><button onClick={()=>setRevId(null)} style={{background:"none",border:"none",color:C.mu,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>✕</button></div>:
+<div style={{background:C.aL,padding:12,borderRadius:10}}>
+<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
+<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder={lang==="ta"?"ஆலோசனை...":"Advice..."}/>
+<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>{lang==="ta"?"பின்":"Back"}</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>{lang==="ta"?"சமர்ப்பி":"Submit"}</Btn></div>
+</div>}
+</Card>}
+</div>};
+
 if(loading)return<Card style={{textAlign:"center",padding:40,color:C.mu}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</Card>;
 
 // Farmer detail
@@ -809,15 +871,7 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 <Btn onClick={()=>setReqStatus(r,"delivered")} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>🚚 {lang==="ta"?"வழங்கப்பட்டது":"Mark delivered"}</Btn>
 </div></Card>}))}
 {tab==="disease"&&(dxReqs.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"நிலுவையில் நோய் கோரிக்கைகள் இல்லை":"No pending diagnosis requests"}</Card>:dxReqs.map(p=>renderPestCard(p,farmers.find(x=>x.id===p.farmer_id))))}
-{tab==="pending"&&(pending.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"முடிந்தது!":"All done!"}</Card>:pending.map(u=>{const ugeo=parseGeo(u.notes);return<Card key={u.id}>
-<div style={{display:"flex",gap:10,marginBottom:8}}>{u.photo_url&&<img src={u.photo_url} style={{width:70,height:70,objectFit:"cover",borderRadius:10,flexShrink:0}}/>}
-<div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{u.profiles?.name||"Farmer"} — {u.plants?.name||"Plant"}</div><div style={{fontSize:12,color:C.mu}}>M{u.month_number} · {u.profiles?.village||""} · 📅 {fmtDateTime(u.created_at)}</div>{u.height_cm&&<div style={{fontSize:12,color:C.mu}}>📏 {u.height_cm}cm</div>}{stripGeo(u.notes)&&<div style={{fontSize:12,color:C.dm,fontStyle:"italic"}}>{stripGeo(u.notes)}</div>}{ugeo&&<div style={{fontSize:11,color:C.bl,marginTop:2,fontWeight:600}}>📍 GPS: {ugeo.lat.toFixed(5)}, {ugeo.lng.toFixed(5)} <a href={`https://maps.google.com/?q=${ugeo.lat},${ugeo.lng}`} target="_blank" style={{color:C.bl}}>↗</a></div>}</div></div>
-{revId===u.id?<div style={{background:C.aL,padding:12,borderRadius:10}}>
-<div style={{display:"flex",gap:6,marginBottom:8}}>{[1,2,3,4,5].map(r=><button key={r} onClick={()=>setRating(r)} style={{width:36,height:36,borderRadius:8,border:`2px solid ${rating===r?C.ac:C.bdr}`,background:rating===r?C.aL:C.sf,cursor:"pointer",fontSize:16}}>{["","😟","😐","🙂","😊","🌟"][r]}</button>)}</div>
-<Input label={lang==="ta"?"கருத்து":"Comment"} value={comment} onChange={setComment} placeholder="Advice..."/>
-<div style={{display:"flex",gap:8}}><Btn onClick={()=>setRevId(null)} primary={false} style={{flex:1}}>Back</Btn><Btn onClick={review} disabled={!rating} style={{flex:1}}>Submit</Btn></div>
-</div>:<Btn onClick={()=>setRevId(u.id)} primary={false}>📝 Review</Btn>}
-</Card>}))}
+{tab==="pending"&&renderGrowthTab()}
 </div>};
 
 // News — items hidden automatically once older than 24h. `hoursAgo` is relative to page load
