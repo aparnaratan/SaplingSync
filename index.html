@@ -235,8 +235,10 @@ return<Card key={r.id}>
 <div style={{display:"flex",alignItems:"center",gap:12}}>
 <div style={{width:40,height:40,borderRadius:10,background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{cr?.icon||"🌱"}</div>
 <div style={{flex:1}}><div style={{fontSize:14,fontWeight:700}}>{cr?.[lang]||r.species}</div><div style={{fontSize:12,color:C.mu}}>{r.quantity} {lang==="ta"?"தாவரங்கள்":"plants"}</div></div>
-<Pill label={r.status==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):r.status==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):(lang==="ta"?"கோரப்பட்டது":"Requested")} color={r.status==="delivered"?C.ac:r.status==="approved"?C.bl:C.wr} bg={r.status==="delivered"?C.aL:r.status==="approved"?C.bL:C.wL}/>
+<Pill label={r.status==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):r.status==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):r.status==="rejected"?(lang==="ta"?"நிராகரிக்கப்பட்டது":"Rejected"):(lang==="ta"?"கோரப்பட்டது":"Requested")} color={r.status==="delivered"?C.ac:r.status==="approved"?C.bl:r.status==="rejected"?C.dg:C.wr} bg={r.status==="delivered"?C.aL:r.status==="approved"?C.bL:r.status==="rejected"?C.dL:C.wL}/>
 </div>
+{(r.status==="approved"||r.status==="delivered")&&r.approved_qty!=null&&<div style={{fontSize:12,color:C.bl,marginTop:8,background:C.bL,borderRadius:8,padding:"6px 10px"}}>✅ {lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"}: {r.approved_qty} {lang==="ta"?"தாவரங்கள்":"plants"}</div>}
+{r.status==="rejected"&&<div style={{fontSize:12,color:C.dg,marginTop:8,background:C.dL,borderRadius:8,padding:"6px 10px"}}>✖️ {lang==="ta"?"நிராகரிக்கப்பட்டது":"Rejected"}{r.decision_note?`: ${r.decision_note}`:""}</div>}
 <button onClick={()=>startDeleteRequest(r)} style={{width:"100%",marginTop:10,padding:9,background:"none",border:`1.5px solid ${C.dg}55`,borderRadius:8,color:C.dg,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>🗑️ {lang==="ta"?"நீக்கு":"Delete"}</button>
 </Card>})}
 {Toast}
@@ -693,7 +695,7 @@ return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWe
 // ADMIN (#1 — full farmer drill-down with plants + growth + pest + map)
 // ═══════════════════════════════════════════════════════════════════════════
 const AdminDash=({lang,onSwitch})=>{const[tab,setTab]=useState("farmers");const[farmers,setFarmers]=useState([]);const[pending,setPending]=useState([]);
-const[plantReqs,setPlantReqs]=useState([]);const[dxReqs,setDxReqs]=useState([]);const[exporting,setExporting]=useState(false);const[reqBusy,setReqBusy]=useState(null);
+const[plantReqs,setPlantReqs]=useState([]);const[dxReqs,setDxReqs]=useState([]);const[exporting,setExporting]=useState(false);const[reqBusy,setReqBusy]=useState(null);const[reqAction,setReqAction]=useState(null);
 const[selF,setSelF]=useState(null);const[fPlants,setFPlants]=useState([]);const[fReqs,setFReqs]=useState([]);const[fUpdates,setFUpdates]=useState([]);const[fPests,setFPests]=useState([]);
 const[revId,setRevId]=useState(null);const[rating,setRating]=useState(0);const[comment,setComment]=useState("");const[loading,setLoading]=useState(true);
 const[gFarmer,setGFarmer]=useState(null);const[gPhotos,setGPhotos]=useState([]);const[gType,setGType]=useState("all");const[gAll,setGAll]=useState(false);const[gPage,setGPage]=useState(0);
@@ -731,20 +733,21 @@ setPestSaving(false);closePest();load();if(selF)openFarmer(selF)};
 const sevColorAdmin=s=>({high:C.dg,medium:C.wr,low:C.ac,unknown:C.bl})[s]||C.bl;
 const sevBgAdmin=s=>({high:C.dL,medium:C.wL,low:C.aL,unknown:C.bL})[s]||C.bL;
 
-const setReqStatus=async(r,status)=>{setReqBusy(r.id);await sb.from("plant_requests").update({status}).eq("id",r.id);setReqBusy(null);load();if(selF)openFarmer(selF)};
-const reqStatusLabel=s=>s==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):s==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):(lang==="ta"?"கோரப்பட்டது":"Requested");
-const reqStatusColor=s=>s==="delivered"?C.ac:s==="approved"?C.bl:C.wr;
-const reqStatusBg=s=>s==="delivered"?C.aL:s==="approved"?C.bL:C.wL;
+const setReqStatus=async(r,status,extra={})=>{setReqBusy(r.id);await sb.from("plant_requests").update({status,decided_at:new Date().toISOString(),...extra}).eq("id",r.id);setReqBusy(null);setReqAction(null);load();if(selF)openFarmer(selF)};
+const reqStatusLabel=s=>s==="delivered"?(lang==="ta"?"வழங்கப்பட்டது":"Delivered"):s==="approved"?(lang==="ta"?"அங்கீகரிக்கப்பட்டது":"Approved"):s==="rejected"?(lang==="ta"?"நிராகரிக்கப்பட்டது":"Rejected"):(lang==="ta"?"கோரப்பட்டது":"Requested");
+const reqStatusColor=s=>s==="delivered"?C.ac:s==="approved"?C.bl:s==="rejected"?C.dg:C.wr;
+const reqStatusBg=s=>s==="delivered"?C.aL:s==="approved"?C.bL:s==="rejected"?C.dL:C.wL;
 
 const csvCell=v=>{const s=(v==null?"":String(v));return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+const csvDT=t=>{if(!t)return"";const d=new Date(t);if(isNaN(d))return"";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`};
 const exportCsv=async()=>{setExporting(true);
 const{data:allReq}=await sb.from("plant_requests").select("*");
 const{data:allPl}=await sb.from("plants").select("*");
 const header=["Name","Phone","Village","Block","District","Soil type","Water source","Land (acres)","Existing crops","Plants requested","Issued plants"];
 const rows=[header];
 farmers.forEach(f=>{let crops=[];try{crops=JSON.parse(f.notes||"[]")}catch(e){}
-const reqs=(allReq||[]).filter(r=>r.farmer_id===f.id).map(r=>`${PLANTS5.find(c=>c.id===r.species)?.en||r.species} x${r.quantity} [${r.status||"requested"}]`).join("; ");
-const pls=(allPl||[]).filter(p=>p.farmer_id===f.id).map(p=>`${p.name||p.species||""}${p.growth_stage?" ("+p.growth_stage+")":""}`).join("; ");
+const reqs=(allReq||[]).filter(r=>r.farmer_id===f.id).map(r=>{const sp=PLANTS5.find(c=>c.id===r.species)?.en||r.species;const st=r.status||"requested";const rd=csvDT(r.created_at),dd=csvDT(r.decided_at);let dec="";if(st==="approved"||st==="delivered")dec=`${st}${r.approved_qty!=null?" ("+r.approved_qty+")":""}${dd?" "+dd:""}`;else if(st==="rejected")dec=`rejected${dd?" "+dd:""}${r.decision_note?" — "+r.decision_note:""}`;const meta=[rd&&"requested "+rd,dec].filter(Boolean).join("; ");return `${sp} x${r.quantity} [${st}]${meta?" ("+meta+")":""}`}).join("; ");
+const pls=(allPl||[]).filter(p=>p.farmer_id===f.id).map(p=>{const dt=csvDT(p.created_at);return `${p.name||p.species||""}${p.growth_stage?" ("+p.growth_stage+")":""}${dt?" ("+dt+")":""}`}).join("; ");
 rows.push([f.name||"",f.phone||"",f.village||"",f.block||"",f.district||"",f.soil_type||"",f.water_source||"",f.land_area_acres??"",crops.map(c=>`${c.type}:${c.qty}`).join(" "),reqs,pls])});
 const csv=rows.map(r=>r.map(csvCell).join(",")).join("\n");
 const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);
@@ -905,10 +908,23 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:700}}>{cr?.[lang]||r.species} <span style={{color:C.mu,fontWeight:500}}>×{r.quantity}</span></div>
 <div style={{fontSize:12,color:C.mu}}>{f?.name||"Farmer"}{f?.village?" · "+f.village:""} · 📅 {fmtDateTime(r.created_at)}</div></div>
 <Pill label={reqStatusLabel(r.status)} color={reqStatusColor(r.status)} bg={reqStatusBg(r.status)}/></div>
-<div style={{display:"flex",gap:8,marginTop:10}}>
-{r.status!=="approved"&&r.status!=="delivered"&&<Btn onClick={()=>setReqStatus(r,"approved")} primary={false} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>✅ {lang==="ta"?"அங்கீகரி":"Approve"}</Btn>}
+{reqAction&&reqAction.id===r.id&&reqAction.type==="approve"?<div style={{marginTop:10}}>
+<div style={{fontSize:12,fontWeight:700,color:C.mu,marginBottom:6}}>{lang==="ta"?"அங்கீகரிக்கப்பட்ட எண்ணிக்கை":"Number approved"}</div>
+<div style={{display:"flex",gap:8}}>
+<input type="number" min="0" max={r.quantity} value={reqAction.qty} onChange={e=>setReqAction({...reqAction,qty:e.target.value.replace(/[^0-9]/g,"")})} placeholder={String(r.quantity)} style={{width:90,padding:9,border:`1.5px solid ${C.bdr}`,borderRadius:8,fontFamily:"inherit",fontSize:13}}/>
+<Btn onClick={()=>setReqStatus(r,"approved",{approved_qty:reqAction.qty===""?null:parseInt(reqAction.qty)})} disabled={reqBusy===r.id||reqAction.qty===""} style={{flex:1,padding:9,fontSize:13}}>✅ {lang==="ta"?"உறுதி":"Confirm"}</Btn>
+<Btn primary={false} onClick={()=>setReqAction(null)} disabled={reqBusy===r.id} style={{padding:9,fontSize:13}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn>
+</div></div>:reqAction&&reqAction.id===r.id&&reqAction.type==="reject"?<div style={{marginTop:10}}>
+<div style={{fontSize:12,fontWeight:700,color:C.mu,marginBottom:6}}>{lang==="ta"?"நிராகரிப்பு காரணம்":"Reason for rejection"}</div>
+<textarea value={reqAction.reason} onChange={e=>setReqAction({...reqAction,reason:e.target.value})} placeholder={lang==="ta"?"எ.கா. கையிருப்பு இல்லை":"e.g. out of stock"} rows={2} style={{width:"100%",boxSizing:"border-box",padding:9,border:`1.5px solid ${C.bdr}`,borderRadius:8,fontFamily:"inherit",fontSize:13,resize:"vertical",marginBottom:8}}/>
+<div style={{display:"flex",gap:8}}>
+<Btn onClick={()=>setReqStatus(r,"rejected",{decision_note:reqAction.reason.trim()||null})} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13,background:C.dL,color:C.dg,border:`1.5px solid ${C.dg}55`}}>✖️ {lang==="ta"?"நிராகரி":"Reject"}</Btn>
+<Btn primary={false} onClick={()=>setReqAction(null)} disabled={reqBusy===r.id} style={{padding:9,fontSize:13}}>{lang==="ta"?"ரத்து":"Cancel"}</Btn>
+</div></div>:<div style={{display:"flex",gap:8,marginTop:10}}>
+{r.status!=="approved"&&r.status!=="delivered"&&<Btn onClick={()=>setReqAction({id:r.id,type:"approve",qty:String(r.quantity)})} primary={false} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>✅ {lang==="ta"?"அங்கீகரி":"Approve"}</Btn>}
+{r.status!=="delivered"&&r.status!=="rejected"&&<Btn onClick={()=>setReqAction({id:r.id,type:"reject",reason:""})} primary={false} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13,background:C.dL,color:C.dg,border:`1.5px solid ${C.dg}55`}}>✖️ {lang==="ta"?"நிராகரி":"Reject"}</Btn>}
 <Btn onClick={()=>setReqStatus(r,"delivered")} disabled={reqBusy===r.id} style={{flex:1,padding:9,fontSize:13}}>🚚 {lang==="ta"?"வழங்கப்பட்டது":"Mark delivered"}</Btn>
-</div></Card>}))}
+</div>}</Card>}))}
 {tab==="disease"&&(dxReqs.length===0?<Card style={{textAlign:"center",color:C.ac,fontWeight:700}}>✅ {lang==="ta"?"நிலுவையில் நோய் கோரிக்கைகள் இல்லை":"No pending diagnosis requests"}</Card>:dxReqs.map(p=>renderPestCard(p,farmers.find(x=>x.id===p.farmer_id))))}
 {tab==="pending"&&renderGrowthTab()}
 </div>};
