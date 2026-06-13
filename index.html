@@ -568,13 +568,20 @@ return<div style={{maxWidth:520,margin:"0 auto"}}>
 // ═══════════════════════════════════════════════════════════════════════════
 // Reply parent encoded in content as `[>>UUID]` prefix to support nested replies without schema changes
 const parseReplyParent=t=>{if(!t)return{parent:null,text:t||""};const m=t.match(/^\[>>([0-9a-f-]+)\]\s*/i);if(!m)return{parent:null,text:t};return{parent:m[1],text:t.slice(m[0].length)}};
+// Official Vilvam Outreach account (vilvamoutreach@gmail.com) — posts authored by this user id surface under the "Vilvam Updates" tab
+const VILVAM_ID="c0175aca-4418-4d00-9e81-ba60f96994b3";
 
 const Community=({lang,user})=>{const[posts,setPosts]=useState([]);const[np,setNp]=useState("");const[npFiles,setNpFiles]=useState([]);const[npPreviews,setNpPreviews]=useState([]);const[posting,setPosting]=useState(false);
 const[replyTo,setReplyTo]=useState(null);const[replyText,setReplyText]=useState("");const[replies,setReplies]=useState({});const[likedPosts,setLikedPosts]=useState({});
 const[loading,setLoading]=useState(true);const[lightbox,setLightbox]=useState(null);const fileRef=useRef();
+const[tab,setTab]=useState("all");// "all" = full community feed, "vilvam" = posts from the official Vilvam Outreach account
+const[vLoaded,setVLoaded]=useState(false);// whether the dedicated Vilvam-posts query has run (merged into `posts`, not capped at 30)
 const{trigger:undoDel,isHidden,Toast}=useUndoableDelete(lang);
 const MAX_PHOTOS=4;
-// photo_url stores 1..N URLs separated by newlines (backward-compatible with single-URL posts)
+const MAX_VIDEO_BYTES=50*1024*1024; // 50 MB per video
+const VIDEO_EXT=/\.(mp4|mov|m4v|webm|ogg|ogv)$/i;
+const isVideoUrl=u=>VIDEO_EXT.test((u||"").split("?")[0]);
+// photo_url stores 1..N URLs separated by newlines (images or videos; backward-compatible with single-URL posts)
 const parsePhotoUrls=s=>s?s.split("\n").map(x=>x.trim()).filter(Boolean):[];
 
 const load=async()=>{const{data}=await sb.from("community_posts").select("*,profiles(name,village)").order("created_at",{ascending:false}).limit(30);setPosts(data||[]);
@@ -582,7 +589,17 @@ if(data?.length){const ids=data.map(p=>p.id);const{data:reps}=await sb.from("com
 // Check which posts user has liked
 const{data:myLikes}=await sb.from("community_likes").select("post_id").eq("user_id",user.id);const lk={};(myLikes||[]).forEach(l=>lk[l.post_id]=true);setLikedPosts(lk)}
 setLoading(false)};
+// Dedicated query: ALL posts from the official Vilvam account (no 30-row limit), merged into the shared `posts`/`replies`/`likedPosts` state so every existing like/reply/delete handler keeps working.
+const loadVilvam=async()=>{const{data}=await sb.from("community_posts").select("*,profiles(name,village)").eq("author_id",VILVAM_ID).order("created_at",{ascending:false});const list=data||[];
+setPosts(prev=>{const map={};prev.forEach(p=>map[p.id]=p);list.forEach(p=>map[p.id]=p);return Object.values(map).sort((a,b)=>(b.created_at||"").localeCompare(a.created_at||""))});
+if(list.length){const ids=list.map(p=>p.id);
+const{data:reps}=await sb.from("community_replies").select("*,profiles(name)").in("post_id",ids).order("created_at");setReplies(prev=>{const g={...prev};ids.forEach(id=>delete g[id]);(reps||[]).forEach(r=>{(g[r.post_id]=g[r.post_id]||[]).push(r)});return g});
+const{data:myLikes}=await sb.from("community_likes").select("post_id").in("post_id",ids).eq("user_id",user.id);setLikedPosts(prev=>{const lk={...prev};ids.forEach(id=>delete lk[id]);(myLikes||[]).forEach(l=>lk[l.post_id]=true);return lk})}
+setVLoaded(true)};
+// Refresh after any mutation: reload the main feed, then re-merge Vilvam posts (sequential to avoid the full-replace in load() clobbering the merge).
+const refresh=async()=>{await load();if(vLoaded)await loadVilvam()};
 useEffect(()=>{load()},[]);
+useEffect(()=>{if(tab==="vilvam"&&!vLoaded)loadVilvam()},[tab]);
 
 const post=async()=>{if(!np.trim()&&npFiles.length===0)return;setPosting(true);
 const urls=[];
@@ -592,32 +609,40 @@ if(upErr){setPosting(false);alert((lang==="ta"?"படம் பதிவேற�
 const{data:{publicUrl}}=sb.storage.from("photos").getPublicUrl(path);urls.push(publicUrl)}
 const photoUrl=urls.length?urls.join("\n"):null;
 await sb.from("community_posts").insert({author_id:user.id,content:np,photo_url:photoUrl});
-setNp("");setNpFiles([]);setNpPreviews([]);setPosting(false);load()};
+setNp("");setNpFiles([]);setNpPreviews([]);setPosting(false);refresh()};
 
-const toggleLike=async(postId)=>{if(likedPosts[postId]){await sb.from("community_likes").delete().eq("post_id",postId).eq("user_id",user.id);await sb.from("community_posts").update({likes:Math.max(0,(posts.find(p=>p.id===postId)?.likes||1)-1)}).eq("id",postId)}else{await sb.from("community_likes").insert({post_id:postId,user_id:user.id});await sb.from("community_posts").update({likes:(posts.find(p=>p.id===postId)?.likes||0)+1}).eq("id",postId)}load()};
+const toggleLike=async(postId)=>{if(likedPosts[postId]){await sb.from("community_likes").delete().eq("post_id",postId).eq("user_id",user.id);await sb.from("community_posts").update({likes:Math.max(0,(posts.find(p=>p.id===postId)?.likes||1)-1)}).eq("id",postId)}else{await sb.from("community_likes").insert({post_id:postId,user_id:user.id});await sb.from("community_posts").update({likes:(posts.find(p=>p.id===postId)?.likes||0)+1}).eq("id",postId)}refresh()};
 
 // replyTo can be {postId, parentReplyId}; if parentReplyId set, prefix content with [>>parentId]
 const reply=async()=>{if(!replyText.trim()||!replyTo)return;
 const content=replyTo.parentReplyId?`[>>${replyTo.parentReplyId}] ${replyText}`:replyText;
 await sb.from("community_replies").insert({post_id:replyTo.postId,author_id:user.id,content});
-setReplyText("");setReplyTo(null);load()};
+setReplyText("");setReplyTo(null);refresh()};
 const startDeletePost=p=>undoDel(p.id,lang==="ta"?"இடுகை நீக்கப்பட்டது":"Post deleted",async()=>{
 await sb.from("community_replies").delete().eq("post_id",p.id);
 await sb.from("community_likes").delete().eq("post_id",p.id);
 for(const url of parsePhotoUrls(p.photo_url)){try{const path=url.split("/photos/")[1];if(path)await sb.storage.from("photos").remove([path])}catch(_){}}
 const{error}=await sb.from("community_posts").delete().eq("id",p.id);
-if(error)throw error;load()});
+if(error)throw error;refresh()});
 const startDeleteReply=r=>undoDel(r.id,lang==="ta"?"கருத்து நீக்கப்பட்டது":"Reply deleted",async()=>{
 const{error}=await sb.from("community_replies").delete().eq("id",r.id);
-if(error)throw error;load()});
+if(error)throw error;refresh()});
 const handlePhoto=e=>{const picked=Array.from(e.target.files||[]);e.target.value="";if(!picked.length)return;
 const slotsLeft=MAX_PHOTOS-npFiles.length;
-const accepted=picked.slice(0,slotsLeft);
-if(picked.length>slotsLeft)alert(lang==="ta"?`அதிகபட்சம் ${MAX_PHOTOS} படங்கள்`:`Maximum ${MAX_PHOTOS} photos`);
+let haveVideo=npFiles.some(f=>f.type.startsWith("video"));
+const accepted=[];
+for(const f of picked){
+if(accepted.length>=slotsLeft){alert(lang==="ta"?`அதிகபட்சம் ${MAX_PHOTOS} இணைப்புகள்`:`Maximum ${MAX_PHOTOS} attachments`);break}
+if(f.type.startsWith("video")){
+if(haveVideo){alert(lang==="ta"?"ஒரு பதிவில் 1 வீடியோ மட்டுமே":"Only 1 video per post");continue}
+if(f.size>MAX_VIDEO_BYTES){alert(lang==="ta"?"வீடியோ மிகப் பெரியது (அதிகபட்சம் 50MB)":"Video too large (max 50 MB)");continue}
+haveVideo=true}
+accepted.push(f)}
+if(!accepted.length)return;
 const startIdx=npFiles.length;
 setNpFiles([...npFiles,...accepted]);
-setNpPreviews([...npPreviews,...accepted.map(()=>"")]);
-accepted.forEach((f,i)=>{const r=new FileReader();r.onload=ev=>{setNpPreviews(prev=>{const next=[...prev];next[startIdx+i]=ev.target.result;return next})};r.readAsDataURL(f)})};
+setNpPreviews([...npPreviews,...accepted.map(f=>f.type.startsWith("video")?URL.createObjectURL(f):"")]);
+accepted.forEach((f,i)=>{if(f.type.startsWith("video"))return;const r=new FileReader();r.onload=ev=>{setNpPreviews(prev=>{const next=[...prev];next[startIdx+i]=ev.target.result;return next})};r.readAsDataURL(f)})};
 const removePhoto=i=>{setNpFiles(npFiles.filter((_,j)=>j!==i));setNpPreviews(npPreviews.filter((_,j)=>j!==i))};
 
 const renderReply=(r,postId,depth)=>{if(isHidden(r.id))return null;const{text}=parseReplyParent(r.content);const myReply=r.author_id===user.id;const childReplies=(replies[postId]||[]).filter(x=>parseReplyParent(x.content).parent===r.id);const showReplyForm=replyTo&&replyTo.postId===postId&&replyTo.parentReplyId===r.id;
@@ -640,30 +665,36 @@ return<div key={r.id} style={{marginTop:8,marginLeft:Math.min(depth,3)*14,paddin
 {childReplies.map(c=>renderReply(c,postId,depth+1))}
 </div>};
 
-return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:14}}>{lang==="ta"?"சமூகம்":"Community"}</h2>
-<Card style={{background:C.alt}}>
+const isVilvamUser=user.id===VILVAM_ID;
+return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:12}}>{lang==="ta"?"சமூகம்":"Community"}</h2>
+<div style={{display:"flex",gap:8,marginBottom:14}}>
+{[{k:"all",l:lang==="ta"?"சமூகம்":"Community"},{k:"vilvam",l:lang==="ta"?"வில்வம் புதுப்பிப்புகள்":"Vilvam Updates"}].map(t=>{const active=tab===t.k;return<button key={t.k} onClick={()=>setTab(t.k)} style={{flex:1,padding:"8px 12px",borderRadius:10,border:`1.5px solid ${active?C.ac:C.bdr}`,background:active?C.aL:C.sf,color:active?C.aD:C.mu,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{t.k==="vilvam"?"🌿 ":""}{t.l}</button>})}
+</div>
+{(tab==="all"||isVilvamUser)&&<Card style={{background:C.alt}}>
 <VInput lang={lang} value={np} onChange={setNp} placeholder={lang==="ta"?"பதிவு எழுது...":"Write a post..."} multi/>
 {npPreviews.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6,marginBottom:10}}>
 {npPreviews.map((src,i)=><div key={i} style={{position:"relative",aspectRatio:"1",borderRadius:8,overflow:"hidden",background:"#0001"}}>
-{src&&<img src={src} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
+{npFiles[i]&&npFiles[i].type.startsWith("video")?(src&&<video src={src} muted playsInline controls style={{width:"100%",height:"100%",objectFit:"cover",display:"block",background:"#000"}}/>):(src&&<img src={src} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>)}
 <button onClick={()=>removePhoto(i)} style={{position:"absolute",top:4,right:4,width:24,height:24,borderRadius:"50%",background:"rgba(0,0,0,.7)",color:"#fff",border:"none",cursor:"pointer",fontSize:13,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit"}}>×</button>
 </div>)}
 </div>}
 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-<button onClick={()=>fileRef.current?.click()} disabled={npFiles.length>=MAX_PHOTOS} style={{padding:"7px 12px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:npFiles.length>=MAX_PHOTOS?C.dm:C.mu,fontSize:12,fontWeight:600,cursor:npFiles.length>=MAX_PHOTOS?"not-allowed":"pointer",fontFamily:"inherit"}}>📷 {lang==="ta"?"படம்":"Photo"} ({npFiles.length}/{MAX_PHOTOS})</button>
-<input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={handlePhoto}/>
+<button onClick={()=>fileRef.current?.click()} disabled={npFiles.length>=MAX_PHOTOS} style={{padding:"7px 12px",background:C.sf,border:`1.5px solid ${C.bdr}`,borderRadius:8,color:npFiles.length>=MAX_PHOTOS?C.dm:C.mu,fontSize:12,fontWeight:600,cursor:npFiles.length>=MAX_PHOTOS?"not-allowed":"pointer",fontFamily:"inherit"}}>📷 {lang==="ta"?"படம்/வீடியோ":"Photo/Video"} ({npFiles.length}/{MAX_PHOTOS})</button>
+<input ref={fileRef} type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={handlePhoto}/>
 <div style={{flex:1}}/><button onClick={post} disabled={posting||(!np.trim()&&npFiles.length===0)} style={{padding:"7px 18px",background:posting?C.dm:C.ac,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:posting?"default":"pointer",fontFamily:"inherit"}}>{posting?(lang==="ta"?"பதிவிடுகிறது...":"Posting..."):(lang==="ta"?"பதிவிடு":"Post")}</button>
-</div></Card>
-{posts.filter(p=>!isHidden(p.id)).map(p=>{const myPost=p.author_id===user.id;const allReplies=replies[p.id]||[];const topLevel=allReplies.filter(r=>parseReplyParent(r.content).parent===null);const showPostReplyForm=replyTo&&replyTo.postId===p.id&&!replyTo.parentReplyId;const photoUrls=parsePhotoUrls(p.photo_url);
+</div></Card>}
+{tab==="vilvam"&&vLoaded&&posts.filter(p=>!isHidden(p.id)&&p.author_id===VILVAM_ID).length===0&&<Card style={{textAlign:"center",padding:30}}><div style={{fontSize:32,marginBottom:8}}>🌿</div><div style={{color:C.dm}}>{lang==="ta"?"இன்னும் வில்வம் புதுப்பிப்புகள் இல்லை":"No Vilvam updates yet"}</div></Card>}
+{tab==="vilvam"&&!vLoaded&&<div style={{color:C.mu,textAlign:"center",padding:20}}>{lang==="ta"?"ஏற்றுகிறது...":"Loading..."}</div>}
+{posts.filter(p=>!isHidden(p.id)&&(tab==="all"||p.author_id===VILVAM_ID)).map(p=>{const myPost=p.author_id===user.id;const allReplies=replies[p.id]||[];const topLevel=allReplies.filter(r=>parseReplyParent(r.content).parent===null);const showPostReplyForm=replyTo&&replyTo.postId===p.id&&!replyTo.parentReplyId;const photoUrls=parsePhotoUrls(p.photo_url);
 return<Card key={p.id}>
 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
 <div style={{display:"flex",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.aL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>👤</div><div><div style={{fontSize:13,fontWeight:700}}>{p.profiles?.name||"Farmer"}</div><div style={{fontSize:10,color:C.dm}}>{p.profiles?.village||""} · 📅 {fmtDateTime(p.created_at)}</div></div></div>
 {myPost&&<button onClick={()=>startDeletePost(p)} style={{background:"none",border:"none",color:C.dg,fontSize:14,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"}} title={lang==="ta"?"இடுகையை நீக்கு":"Delete post"}>🗑️</button>}
 </div>
 <div style={{fontSize:14,lineHeight:1.6,marginBottom:8}}>{p.content}</div>
-{photoUrls.length===1&&<img src={photoUrls[0]} onClick={()=>setLightbox(photoUrls[0])} style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:8,marginBottom:8,cursor:"pointer"}}/>}
+{photoUrls.length===1&&(isVideoUrl(photoUrls[0])?<video src={photoUrls[0]} controls playsInline preload="metadata" style={{width:"100%",maxHeight:280,borderRadius:8,marginBottom:8,background:"#000",display:"block"}}/>:<img src={photoUrls[0]} onClick={()=>setLightbox(photoUrls[0])} style={{width:"100%",maxHeight:240,objectFit:"cover",borderRadius:8,marginBottom:8,cursor:"pointer"}}/>)}
 {photoUrls.length>1&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:4,marginBottom:8}}>
-{photoUrls.slice(0,4).map((u,i)=><img key={i} src={u} onClick={()=>setLightbox(u)} style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,cursor:"pointer",display:"block"}}/>)}
+{photoUrls.slice(0,4).map((u,i)=>isVideoUrl(u)?<video key={i} src={u} controls playsInline preload="metadata" style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,background:"#000",display:"block"}}/>:<img key={i} src={u} onClick={()=>setLightbox(u)} style={{width:"100%",aspectRatio:"1",objectFit:"cover",borderRadius:8,cursor:"pointer",display:"block"}}/>)}
 </div>}
 <div style={{display:"flex",gap:14,borderTop:`1px solid ${C.bdr}`,paddingTop:8}}>
 <button onClick={()=>toggleLike(p.id)} style={{background:"none",border:"none",color:likedPosts[p.id]?C.ac:C.mu,fontSize:12,fontWeight:600,cursor:"pointer"}}>👍 {lang==="ta"?"உதவியாக":"Helpful"} ({p.likes||0})</button>
@@ -931,14 +962,14 @@ return<div style={{maxWidth:700,margin:"0 auto"}}>
 
 // News — items hidden automatically once older than 24h. `hoursAgo` is relative to page load
 // so the feed always renders fresh content; in production this would come from a real news source.
-const News=({lang})=>{const now=Date.now();
+const News=({lang})=>{const now=Date.now();const[open,setOpen]=useState(null);
 const items=[
-{i:"🌧️",t:{en:"Heavy rain alert TN coastal districts",ta:"கடலோர மாவட்டங்களில் கனமழை எச்சரிக்கை"},s:"IMD",hoursAgo:1},
-{i:"🏛️",t:{en:"PM-KISAN 17th installment credited",ta:"PM-KISAN 17வது தவணை வரவு"},s:"GoI",hoursAgo:4},
-{i:"🌱",t:{en:"TNAU mango pollination tips",ta:"TNAU மாம்பழ மகரந்த சேர்க்கை குறிப்புகள்"},s:"TNAU",hoursAgo:9},
-{i:"💰",t:{en:"Coconut prices +12% in Coimbatore",ta:"கோவையில் தேங்காய் விலை +12%"},s:"Agmarknet",hoursAgo:14},
-{i:"🐛",t:{en:"Fall armyworm reported in Salem maize",ta:"சேலம் சோளத்தில் ராணுவப் புழு"},s:"State Agri Dept",hoursAgo:20},
-{i:"📜",t:{en:"Old advisory archived (>24h)",ta:"பழைய ஆலோசனை (>24h)"},s:"archive",hoursAgo:30},
+{i:"🌧️",t:{en:"Heavy rain alert TN coastal districts",ta:"கடலோர மாவட்டங்களில் கனமழை எச்சரிக்கை"},s:"IMD",hoursAgo:1,d:{en:"IMD has issued an orange alert for heavy to very heavy rainfall over Nagapattinam, Cuddalore and Thanjavur districts for the next 48 hours. Farmers are advised to delay irrigation and harvesting, ensure proper field drainage, and protect harvested produce from moisture.",ta:"நாகப்பட்டினம், கடலூர் மற்றும் தஞ்சாவூர் மாவட்டங்களில் அடுத்த 48 மணி நேரத்திற்கு கனமழைக்கான ஆரஞ்சு எச்சரிக்கையை IMD வெளியிட்டுள்ளது. பாசனம் மற்றும் அறுவடையை தாமதப்படுத்தவும், வயல் வடிகாலை சரிசெய்யவும், அறுவடை செய்த விளைபொருட்களை ஈரப்பதத்திலிருந்து பாதுகாக்கவும் விவசாயிகளுக்கு அறிவுறுத்தப்படுகிறது."}},
+{i:"🏛️",t:{en:"PM-KISAN 17th installment credited",ta:"PM-KISAN 17வது தவணை வரவு"},s:"GoI",hoursAgo:4,d:{en:"The 17th installment of ₹2,000 under the PM-KISAN scheme has been credited to eligible beneficiaries' bank accounts. Check your status on the PM-KISAN portal using your registered mobile or Aadhaar number, and complete e-KYC if your payment is still pending.",ta:"PM-KISAN திட்டத்தின் கீழ் 17வது தவணையாக ₹2,000 தகுதியான பயனாளிகளின் வங்கிக் கணக்குகளில் வரவு வைக்கப்பட்டுள்ளது. பதிவு செய்த மொபைல் அல்லது ஆதார் எண்ணைப் பயன்படுத்தி PM-KISAN போர்ட்டலில் உங்கள் நிலையைச் சரிபார்க்கவும்; பணம் நிலுவையில் இருந்தால் e-KYC ஐ முடிக்கவும்."}},
+{i:"🌱",t:{en:"TNAU mango pollination tips",ta:"TNAU மாம்பழ மகரந்த சேர்க்கை குறிப்புகள்"},s:"TNAU",hoursAgo:9,d:{en:"TNAU advises mango growers to avoid spraying insecticides during peak flowering to protect pollinators. Maintain bee activity, spray Planofix (NAA) at the recommended dose to reduce fruit drop, and give light irrigation during fruit set.",ta:"மாம்பழ விவசாயிகள் பூக்கும் காலத்தில் பூச்சிக்கொல்லி தெளிப்பதைத் தவிர்க்குமாறு TNAU அறிவுறுத்துகிறது. தேனீக்களின் செயல்பாட்டைப் பேணவும், காய் உதிர்வைக் குறைக்க பரிந்துரைக்கப்பட்ட அளவில் ப்ளானோஃபிக்ஸ் (NAA) தெளிக்கவும், காய் பிடிக்கும் நேரத்தில் இலகுவான பாசனம் செய்யவும்."},v:"l9Vyols86Pc"},
+{i:"💰",t:{en:"Coconut prices +12% in Coimbatore",ta:"கோவையில் தேங்காய் விலை +12%"},s:"Agmarknet",hoursAgo:14,d:{en:"Coconut prices rose 12% week-on-week at the Coimbatore regulated market, driven by lower arrivals and steady oil demand. Growers holding stock may benefit from the current uptrend; check daily modal prices on Agmarknet before selling.",ta:"கோயம்புத்தூர் ஒழுங்குபடுத்தப்பட்ட சந்தையில் தேங்காய் விலை வாரத்திற்கு வாரம் 12% உயர்ந்துள்ளது. வரத்து குறைவு மற்றும் எண்ணெய் தேவை இதற்குக் காரணம். கையிருப்பு வைத்திருப்பவர்கள் இந்த உயர்வால் பயனடையலாம்; விற்பதற்கு முன் Agmarknet இல் தினசரி விலையைச் சரிபார்க்கவும்."}},
+{i:"🐛",t:{en:"Fall armyworm reported in Salem maize",ta:"சேலம் சோளத்தில் ராணுவப் புழு"},s:"State Agri Dept",hoursAgo:20,d:{en:"Fall armyworm infestation has been reported in maize fields across Salem district. Scout fields in the early morning, apply recommended bio-pesticides or emamectin benzoate at threshold, and place 5 pheromone traps per acre to monitor adult moths.",ta:"சேலம் மாவட்டத்தில் சோள வயல்களில் ராணுவப் புழு தாக்குதல் தெரிவிக்கப்பட்டுள்ளது. அதிகாலையில் வயல்களை ஆய்வு செய்யவும், பரிந்துரைக்கப்பட்ட உயிர் பூச்சிக்கொல்லிகள் அல்லது இமாமெக்டின் பென்சோயேட்டைப் பயன்படுத்தவும், ஆண் அந்துப்பூச்சிகளைக் கண்காணிக்க ஏக்கருக்கு 5 ஃபெரோமோன் பொறிகளை வைக்கவும்."},v:"sJ-l9Vyu_Ew"},
+{i:"📜",t:{en:"Old advisory archived (>24h)",ta:"பழைய ஆலோசனை (>24h)"},s:"archive",hoursAgo:30,d:{en:"This advisory is more than 24 hours old and has been moved to the archive.",ta:"இந்த ஆலோசனை 24 மணி நேரத்திற்கு மேல் பழையது, காப்பகத்திற்கு மாற்றப்பட்டுள்ளது."}},
 ].map(n=>({...n,published:new Date(now-n.hoursAgo*3600*1000)}))
 .filter(n=>(now-n.published.getTime())<=24*3600*1000)
 .sort((a,b)=>b.published-a.published);
@@ -946,7 +977,7 @@ const fmtRel=d=>{const h=(now-d.getTime())/3600000;if(h<1)return lang==="ta"?`${
 return<div style={{maxWidth:520,margin:"0 auto"}}><h2 style={{fontSize:20,fontWeight:800,marginBottom:6}}>{lang==="ta"?"விவசாய ஆலோசனை":"Farm Advisory"}</h2>
 <div style={{fontSize:11,color:C.dm,marginBottom:14}}>{lang==="ta"?"கடந்த 24 மணி நேரம் மட்டும் — பழையது தானாக மறையும்":"Last 24h only — older items auto-hide"}</div>
 {items.length===0&&<Card style={{textAlign:"center",padding:30,color:C.dm}}><div style={{fontSize:32,marginBottom:8}}>📰</div><div>{lang==="ta"?"புதிய ஆலோசனை இல்லை":"No advisory in the last 24 hours"}</div></Card>}
-{items.map((n,i)=><Card key={i}><div style={{display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:20}}>{n.i}</span><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{n.t[lang]}</div><div style={{fontSize:11,color:C.dm,marginTop:2}}>{n.s} · 📅 {fmtDateTime(n.published)} · <span style={{color:C.ac,fontWeight:600}}>{fmtRel(n.published)}</span></div></div></div></Card>)}
+{items.map((n,i)=>{const ex=open===i;return<Card key={i} onClick={()=>setOpen(ex?null:i)} style={{cursor:"pointer"}}><div style={{display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:20}}>{n.i}</span><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600}}>{n.t[lang]} {n.v&&<span style={{fontSize:10,fontWeight:700,color:C.dg,background:C.dL,borderRadius:6,padding:"1px 6px",whiteSpace:"nowrap"}}>▶ {lang==="ta"?"வீடியோ":"Video"}</span>}</div><div style={{fontSize:11,color:C.dm,marginTop:2}}>{n.s} · 📅 {fmtDateTime(n.published)} · <span style={{color:C.ac,fontWeight:600}}>{fmtRel(n.published)}</span></div></div><span style={{fontSize:13,color:C.dm,transform:ex?"rotate(180deg)":"none",transition:"transform .2s"}}>▾</span></div>{ex&&<div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.bdr}`}}><div style={{fontSize:13,color:C.tx,lineHeight:1.55}}>{n.d[lang]}</div>{n.v&&<div onClick={e=>e.stopPropagation()} style={{position:"relative",paddingBottom:"56.25%",height:0,marginTop:10,borderRadius:10,overflow:"hidden",background:"#000"}}><iframe src={`https://www.youtube.com/embed/${n.v}`} title={n.t[lang]} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",border:0}}/></div>}</div>}</Card>})}
 </div>};
 
 // DateTime clock
