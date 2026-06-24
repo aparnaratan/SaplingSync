@@ -3,3 +3,9 @@
 .env
 .env.local
 node_modules/
+
+# Android build outputs
+android/.gradle/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/index.html

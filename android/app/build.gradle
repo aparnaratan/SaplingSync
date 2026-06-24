@@ -1,0 +1,25 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.saplingsync'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.saplingsync"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
