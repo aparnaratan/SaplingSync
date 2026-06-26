@@ -20,8 +20,10 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Copy index.html into Android assets
-        run: cp index.html android/app/src/main/assets/index.html
+      - name: Copy web app into Android assets
+        run: |
+          cp index.html android/app/src/main/assets/index.html
+          cp manifest.json icon-192.png icon-512.png android/app/src/main/assets/
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3

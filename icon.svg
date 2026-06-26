@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#2d7a3a"/>
+  <!-- stem -->
+  <path d="M256 392 V232" stroke="#ffffff" stroke-width="22" stroke-linecap="round" fill="none"/>
+  <!-- left leaf -->
+  <path d="M256 300 C 200 300 150 268 132 210 C 196 200 244 232 256 290 Z" fill="#ffffff"/>
+  <!-- right leaf -->
+  <path d="M256 268 C 312 268 362 236 380 178 C 316 168 268 200 256 258 Z" fill="#cdeccd"/>
+  <!-- soil mound -->
+  <path d="M150 400 Q256 360 362 400 L362 420 Q256 388 150 420 Z" fill="#cdeccd"/>
+</svg>

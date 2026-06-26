@@ -9,3 +9,6 @@ android/.gradle/
 android/app/build/
 android/local.properties
 android/app/src/main/assets/index.html
+android/app/src/main/assets/manifest.json
+android/app/src/main/assets/icon-192.png
+android/app/src/main/assets/icon-512.png

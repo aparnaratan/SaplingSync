@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#2d7a3a">
 <title>SaplingSync</title>
+<!-- PWA / "Add to Home Screen" support (web + iOS). The Android APK ignores these. -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SaplingSync">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Noto+Sans+Tamil:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -1053,6 +1060,15 @@ return<div style={{minHeight:"100vh",background:role==="admin"?"#f0f4f0":C.bg,fo
 </div>}
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+<script>
+// Register the service worker so the app is installable (Add to Home Screen).
+// Only runs over HTTP(S); skipped inside the Android APK (file://), so no errors there.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
