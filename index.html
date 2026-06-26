@@ -789,6 +789,10 @@ const reqs=(allReq||[]).filter(r=>r.farmer_id===f.id).map(r=>{const sp=PLANTS5.f
 const pls=(allPl||[]).filter(p=>p.farmer_id===f.id).map(p=>{const dt=csvDT(p.created_at);return `${p.name||p.species||""}${p.growth_stage?" ("+p.growth_stage+")":""}${dt?" ("+dt+")":""}`}).join("; ");
 rows.push([f.name||"",f.phone||"",f.village||"",f.block||"",f.district||"",f.soil_type||"",f.water_source||"",f.land_area_acres??"",crops.map(c=>`${c.type}:${c.qty}`).join(" "),reqs,pls])});
 const csv=rows.map(r=>r.map(csvCell).join(",")).join("\n");
+// In the Android app (WebView) a blob download is silently dropped, so hand the
+// text to the native bridge which saves it to Downloads. Browsers use the blob path.
+if(window.AndroidDownloader&&typeof window.AndroidDownloader.saveText==="function"){
+  window.AndroidDownloader.saveText("﻿"+csv,"saplingsync-farmers.csv","text/csv");setExporting(false);return}
 const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});const url=URL.createObjectURL(blob);
 const a=document.createElement("a");a.href=url;a.download="saplingsync-farmers.csv";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setExporting(false)};
 

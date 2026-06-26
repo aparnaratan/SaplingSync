@@ -3,18 +3,25 @@ package com.saplingsync;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -42,6 +49,10 @@ public class MainActivity extends Activity {
         s.setGeolocationEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setUserAgentString(s.getUserAgentString() + " SaplingSync/1.0");
+
+        // Bridge so the web app can save files (e.g. CSV export) to the
+        // Downloads folder — a bare WebView can't trigger blob downloads itself.
+        webView.addJavascriptInterface(new DownloadBridge(), "AndroidDownloader");
 
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient() {
@@ -76,12 +87,22 @@ public class MainActivity extends Activity {
             }
         });
 
-        requestPermissions(new String[]{
-            Manifest.permission.CAMERA,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.READ_MEDIA_IMAGES
-        }, 1);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            requestPermissions(new String[]{
+                Manifest.permission.CAMERA,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            }, 1);
+        } else {
+            requestPermissions(new String[]{
+                Manifest.permission.CAMERA,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.READ_MEDIA_IMAGES
+            }, 1);
+        }
 
         webView.loadUrl("file:///android_asset/index.html");
     }
@@ -119,5 +140,41 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
+    }
+
+    private void toast(final String msg) {
+        runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show());
+    }
+
+    /** Exposed to JS as window.AndroidDownloader. Saves text content to Downloads. */
+    private class DownloadBridge {
+        @JavascriptInterface
+        public void saveText(String content, String filename, String mime) {
+            if (filename == null || filename.isEmpty()) filename = "download.txt";
+            if (mime == null || mime.isEmpty()) mime = "text/plain";
+            try {
+                byte[] bytes = content.getBytes("UTF-8");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                    values.put(MediaStore.Downloads.MIME_TYPE, mime);
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                    Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (uri == null) { toast("Could not save file"); return; }
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    os.write(bytes);
+                    os.close();
+                } else {
+                    File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                    if (!dir.exists()) dir.mkdirs();
+                    FileOutputStream fos = new FileOutputStream(new File(dir, filename));
+                    fos.write(bytes);
+                    fos.close();
+                }
+                toast("Saved to Downloads: " + filename);
+            } catch (Exception e) {
+                toast("Save failed: " + e.getMessage());
+            }
+        }
     }
 }
