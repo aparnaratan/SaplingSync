@@ -12,9 +12,22 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        release {
+            storeFile file("../saplingsync.jks")
+            storePassword "saplingsync2024"
+            keyAlias "saplingsync"
+            keyPassword "saplingsync2024"
+        }
+    }
+
     buildTypes {
         debug {
-            debuggable true
+            signingConfig signingConfigs.release
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
         }
     }
 
