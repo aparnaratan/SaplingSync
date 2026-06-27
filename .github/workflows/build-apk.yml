@@ -5,8 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
+# NOTE: This workflow only BUILDS the APK to verify it compiles, and uploads it
+# as an artifact. It does NOT publish to the release. The release APK is built
+# locally by the collaborator so it keeps the original debug signing key — a
+# CI-signed APK has a different key and won't install over existing installs.
 
 jobs:
   build:
@@ -44,15 +46,3 @@ jobs:
           name: SaplingSync-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
-      # Publish the freshly built APK to the v1.0 release so the public
-      # download link (shared via WhatsApp) always serves the latest build.
-      - name: Publish APK to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0
-          name: SaplingSync v1.0
-          body: |
-            Android APK — download and install on your Android phone.
-            Enable 'Install from unknown sources' in Settings → Security first.
-          files: android/app/build/outputs/apk/debug/app-debug.apk
